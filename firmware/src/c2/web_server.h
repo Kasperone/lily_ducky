@@ -1,8 +1,8 @@
 // =============================================================================
 // c2/web_server.h — WiFi C2: SoftAP + HTTP dashboard + REST API
 // =============================================================================
-#ifndef LILLY_DUCKY_WEB_SERVER_H
-#define LILLY_DUCKY_WEB_SERVER_H
+#ifndef LILY_DUCKY_WEB_SERVER_H
+#define LILY_DUCKY_WEB_SERVER_H
 
 #include <Arduino.h>
 #include <WiFi.h>

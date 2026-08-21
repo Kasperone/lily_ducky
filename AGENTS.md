@@ -1,4 +1,4 @@
-# lily-ducky — DIY BadUSB on the LILYGO T-Dongle family
+# lily_ducky — DIY BadUSB on the LILYGO T-Dongle family
 
 Research doc: `/home/kasperone/Documents/vault/Claude Code Research/DIY-Rubber-Ducky-BadUSB-Deep-Research.md`
 
@@ -38,7 +38,7 @@ T-Dongle-S3 (USB-OTG) — or BLE HID, which both boards can do (BLE 5).
   LCD). T-Dongle-S3: `SD_MMC` 1-bit mode (CLK=12, CMD=16, D0=14). Both behind `Storage::`
   API + `Storage::fs()` accessor.
 - **LCD**: ST7735 0.96" 80×160 IPS via SPI — TFT_eSPI, `LCD_ENABLED=1` in config.h.
-  Landscape (160×80), shows Lily-Ducky title, SSID, IP, auth token, client count, status corner
+  Landscape (160×80), shows LilyDucky title, SSID, IP, auth token, client count, status corner
 - **LED**: APA102, bit-banged in hal.cpp (no library) — C5: DI=5 CI=4; S3: DIN=40 CLK=39
 - **Button**: C5: GPIO28 (BOOT); S3: GPIO0
 - **Board definitions**: vendored in `firmware/boards/` (Lilygo-T-Dongle-C5.json, dongles3.json)

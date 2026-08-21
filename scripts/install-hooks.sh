@@ -1,5 +1,5 @@
 #!/bin/sh
-# Install repo git hooks for every fresh clone of lilly-ducky.
+# Install repo git hooks for every fresh clone of lily_ducky.
 # Run once after cloning:  scripts/install-hooks.sh
 #
 # Uses core.hooksPath (git >= 2.9) to point at the committed .githooks/
@@ -10,7 +10,7 @@ set -e
 cd "$(git rev-parse --show-toplevel)"
 
 if [ ! -d .git ]; then
-    echo "Not a git repository — run this from a lilly-ducky clone." >&2
+    echo "Not a git repository — run this from a lily_ducky clone." >&2
     exit 1
 fi
 
