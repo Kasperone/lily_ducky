@@ -9,15 +9,20 @@ been flashed to real hardware yet; build verification is planned for the next ph
 on a dedicated build VM (PlatformIO is not installed on this machine).
 Phase 4 security bypass features implemented (OS detect, layouts, VID/PID, jitter, exfil, ATTACKMODE) — S3 target only.
 
-## ⚠️ The ESP32-C5 cannot be a USB keyboard (silicon limitation)
-The C5's USB-A port is wired to a **fixed-function USB Serial/JTAG controller** —
-flash + serial console only. There is **no USB-OTG peripheral** in the C5, so it can
-never enumerate as HID keyboard/storage. Confirmed: ESP32-C5 datasheet §4.2.1.5,
-Espressif `esp-usb#371`, `esp-idf#18625`. Arduino's `USBHIDKeyboard` is gated on
-`SOC_USB_OTG_SUPPORTED` (= 0 on C5).
+## ⚠️ The ESP32-C5 cannot be a USB keyboard
+USB HID/MSC require a USB-OTG peripheral; in the ESP32 family only the S2/S3 have one.
+Two independent reasons block it on the C5, either one sufficient:
+1. **Silicon** — the C5's peripheral list is a *fixed-function USB Serial/JTAG
+   controller* (CDC-ACM + JTAG, hard-wired) with no USB-OTG: datasheet §4.2.1.5, and
+   ESP-IDF `soc_caps.h` defines `SOC_USB_SERIAL_JTAG_SUPPORTED=1` with no
+   `SOC_USB_OTG_SUPPORTED`. Arduino's `USBHIDKeyboard` is gated on that macro, so it
+   compiles to nothing on the C5.
+2. **Software** — even under the reading that the C5 has latent OTG silicon
+   (esp-idf#18625, esp-usb#371), Espressif marked C5 TinyUSB device-mode "Won't Do":
+   no HID/MSC stack ships, so there is no path at the driver layer either.
 Consequence: on the C5 build every HID function is an honest no-op; the device is a
-WiFi C2 lab node + interpreter/display/storage exerciser. Keystroke injection requires
-the T-Dongle-S3 (or another USB-OTG board).
+WiFi C2 lab node + interpreter/display/storage exerciser. Keystroke injection needs the
+T-Dongle-S3 (USB-OTG) — or BLE HID, which both boards can do (BLE 5).
 
 ## Architecture
 - **Targets**: LILYGO T-Dongle-C5 (ESP32-C5, 16MB Flash, 8MB PSRAM, WiFi 6 dual-band)
@@ -88,7 +93,8 @@ the T-Dongle-S3 (or another USB-OTG board).
 - **Next phase — build verification VM**: install PlatformIO there, build both envs,
   flash the C5 (this machine only hosts the repo + GitHub pushes)
 - Phase 2.5: Port interpreter to CircuitPython for RP2350-One fallback
-- Phase 3: BLE HID (ESP32 BLE keyboard — "cableless ducky"; C5 has BLE 5 + WiFi 6 — candidate)
+- Phase 3: BLE HID ("cableless ducky") — both boards have BLE 5, so it runs on either;
+  it is the **C5's only keystroke-injection route** since the C5 has no USB HID
 - Phase 5: Defense tools (USBGuard rules, DuckHunt speed detector)
 - Runtime VID/PID hot-swap (requires USB re-enumeration or core patch) — S3 only
 - Lock-LED covert channel (bidirectional, needs host-side component)

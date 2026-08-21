@@ -54,12 +54,14 @@ deliberately readable.
 | LCD / LED / SD | ✅ all | ✅ all |
 | Role in this repo | C2 lab node: dashboard, interpreter, display | The actual keystroke-injection device |
 
-> **Why can't the C5 type?** The ESP32-C5's USB port is a *fixed-function Serial/JTAG
-> controller* (flash + serial console only) — it has no USB-OTG peripheral that could
-> enumerate as a keyboard. This is confirmed by Espressif
-> ([esp-usb#371](https://github.com/espressif/esp-usb/issues/371)) and the C5 datasheet.
-> On the C5 the firmware runs the full interpreter with typing as a no-op, so every
-> non-USB subsystem (LCD, LED, SD, WiFi C2, payload logic) is fully exercisable.
+> **Why can't the C5 type?** USB HID needs a **USB-OTG** peripheral — and in the ESP32
+> family only the **S2/S3** have one. The C5 (like the C3/C6/H2) ships only a
+> *fixed-function USB Serial/JTAG controller*: hard-wired as a CDC-ACM serial + JTAG
+> console, it can never enumerate as a keyboard. Confirmed by the C5 datasheet
+> (§4.2.1.5 lists only the Serial/JTAG controller — no OTG) and by Arduino-ESP32 gating
+> `USBHIDKeyboard` on `SOC_USB_OTG_SUPPORTED`, which is `0` on the C5. So the C5 build
+> runs the full interpreter with typing as a no-op — every non-USB subsystem (LCD, LED,
+> SD, WiFi C2, payload logic) is still fully exercised.
 
 ---
 
@@ -146,7 +148,9 @@ arrows…), modifiers (`GUI`, `CTRL`, `ALT`, `SHIFT`), `F1`–`F12`, combos (`CT
 **Tier 2** — `DEFINE`, `VAR`, `IF/ELSE_IF/ELSE/END_IF`, `WHILE/END_WHILE`,
 `FUNCTION/CALL/END_FUNCTION`, `RESTART_PAYLOAD`, `STOP_PAYLOAD`, `DEFAULTDELAY`.
 
-**Security-bypass extensions** (S3 only where USB is involved) — `DETECT_OS` → `$_OS`,
+**Security-bypass extensions** (S3 only — each rides the USB HID path: descriptor
+spoofing, keystroke output, or reading the keyboard LED-status register, all of which
+need USB-OTG) — `DETECT_OS` → `$_OS`,
 `LAYOUT US|PL|DE`, `JITTER_MAX`, `EXFIL_START/STOP`, `ATTACKMODE HID STORAGE`,
 compile-time VID/PID spoofing (see `firmware/platformio.ini`).
 
