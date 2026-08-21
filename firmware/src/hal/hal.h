@@ -1,8 +1,13 @@
 // =============================================================================
 // hal.h / hal.cpp — Hardware Abstraction Layer
 // =============================================================================
-// USB HID keyboard, APA102 RGB LED, button input.
+// USB HID keyboard (S3 only), APA102 RGB LED, button input.
 // All platform-specific so the interpreter doesn't touch Arduino APIs.
+//
+// On the T-Dongle-C5 (no USB-OTG peripheral) every keyboard function is a
+// documented no-op: press() types nothing, osDetectResult() reports
+// OS_UNKNOWN, enableMSC() refuses. The interpreter and C2 code paths stay
+// identical across both boards.
 // =============================================================================
 #ifndef FUNNY_USB_HAL_H
 #define FUNNY_USB_HAL_H
@@ -70,19 +75,19 @@ static const uint8_t KEY_0 = 0x27;
 static const uint8_t KEY_RETURN    = 0x28;
 static const uint8_t KEY_ESC       = 0x29;
 static const uint8_t KEY_BACKSPACE = 0x2A;
-static const uint8_t KEY_TAB     = 0x2B;
-static const uint8_t KEY_SPACE   = 0x2C;
-static const uint8_t KEY_MINUS   = 0x2D;
-static const uint8_t KEY_EQUAL   = 0x2E;
-static const uint8_t KEY_LBRACK  = 0x2F;
-static const uint8_t KEY_RBRACK  = 0x30;
-static const uint8_t KEY_BSLASH  = 0x31;
-static const uint8_t KEY_SEMI    = 0x33;
-static const uint8_t KEY_QUOTE   = 0x34;
-static const uint8_t KEY_GRAVE   = 0x35;
-static const uint8_t KEY_COMMA   = 0x36;
-static const uint8_t KEY_DOT     = 0x37;
-static const uint8_t KEY_SLASH   = 0x38;
+static const uint8_t KEY_TAB       = 0x2B;
+static const uint8_t KEY_SPACE     = 0x2C;
+static const uint8_t KEY_MINUS     = 0x2D;
+static const uint8_t KEY_EQUAL     = 0x2E;
+static const uint8_t KEY_LBRACK    = 0x2F;
+static const uint8_t KEY_RBRACK    = 0x30;
+static const uint8_t KEY_BSLASH    = 0x31;
+static const uint8_t KEY_SEMI      = 0x33;
+static const uint8_t KEY_QUOTE     = 0x34;
+static const uint8_t KEY_GRAVE     = 0x35;
+static const uint8_t KEY_COMMA     = 0x36;
+static const uint8_t KEY_DOT       = 0x37;
+static const uint8_t KEY_SLASH     = 0x38;
 
 static const uint8_t KEY_CAPSLOCK    = 0x39;
 static const uint8_t KEY_F1          = 0x3A;
@@ -122,7 +127,7 @@ namespace Hal {
     // One-time init: USB descriptors, LED pins, button
     void init();
 
-    // USB — keyboard
+    // USB — keyboard (no-ops on targets without USB-OTG, e.g. ESP32-C5)
     void keyboardBegin();           // register HID report descriptors
     void keyboardEnd();             // remove keyboard (keep storage etc.)
     void press(uint8_t modifier, uint8_t keycode);

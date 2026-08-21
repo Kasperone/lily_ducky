@@ -1,48 +1,50 @@
 // =============================================================================
 // hal.cpp — Hardware Abstraction Layer implementation
 // =============================================================================
-// USB HID keyboard, APA102 RGB LED, button input, OS detection,
-// VID/PID spoofing, keystroke capture, USB Mass Storage composite.
+// USB HID keyboard (T-Dongle-S3), APA102 RGB LED, button input,
+// OS detection, VID/PID spoofing, keystroke capture, USB Mass Storage
+// composite. Everything behind CFG_HAS_USB_HID degrades to honest no-ops
+// on the T-Dongle-C5 (ESP32-C5 has no USB-OTG peripheral).
 // =============================================================================
 
 #include "hal.h"
-#include <USB.h>
-#include <USBHIDKeyboard.h>
-#include <APA102.h>
-#include "OneButton.h"
 #include "storage/storage.h"
 
-// ─── USB Keyboard instance ───────────────────────────────────────────────────
+#if CFG_HAS_USB_HID
+#include <USB.h>
+#include <USBHIDKeyboard.h>
+#endif
+
+// ─── USB Keyboard instance (S3 only) ────────────────────────────────────────
+#if CFG_HAS_USB_HID
 static USBHIDKeyboard keyboard;
 static USB usb;  // manages USB device lifecycle
-
-// ─── APA102 LED ──────────────────────────────────────────────────────────────
-static void sendAPA102(uint8_t r, uint8_t g, uint8_t b);
-
-// ─── Button (debounced via OneButton or manual) ───────────────────────────────
-static OneButton button(PIN_BUTTON, true);  // active LOW
-static bool _btnConsumed = false;
+#endif
 
 // ─── VID/PID Spoofing State ──────────────────────────────────────────────────
 static uint16_t _activeVID = CFG_USB_VID;
 static uint16_t _activePID = CFG_USB_PID;
 
-// ─── OS Detection State ──────────────────────────────────────────────────────
+// ─── OS Detection State (S3 only — C5 has no HID to observe) ────────────────
+#if CFG_HAS_USB_HID
 static uint32_t _osDetectStartMs = 0;
 static bool     _osDetectRunning = false;
 static uint8_t  _lastLedState    = 0;
 static uint32_t _setReportCount  = 0;
 static uint32_t _firstReportTime = 0;
 static uint32_t _lastReportTime  = 0;
+#endif
 
-// ─── Keystroke Capture State ─────────────────────────────────────────────────
+// ─── Keystroke Capture State (S3 only) ──────────────────────────────────────
+#if CFG_HAS_USB_HID
 static bool     _capturing = false;
 static uint8_t  _captureBuffer[CFG_EXFIL_BUF_SIZE];
 static uint16_t _capturePos = 0;
+#endif
 
 // ─── USB MSC State ───────────────────────────────────────────────────────────
 // USBMSC class is available in Arduino-ESP32 core (USBMassStorage equivalent)
-#if __has_include(<USBMSC.h>)
+#if CFG_HAS_USB_HID && __has_include(<USBMSC.h>)
 #include <USBMSC.h>
 static USBMSC msc;
 static bool _mscEnabled = false;
@@ -57,14 +59,13 @@ static bool _mscEnabled = false;
 void Hal::init() {
     // Button setup
     pinMode(PIN_BUTTON, INPUT_PULLUP);
-    button.setClickTicks(50);
-    button.setPressTicks(800);
 
     // LED: data and clock pins as outputs (APA102 is SPI-like, bit-banged)
     pinMode(PIN_LED_DATA,  OUTPUT);
     pinMode(PIN_LED_CLOCK, OUTPUT);
     ledOff();
 
+#if CFG_HAS_USB_HID
     // ── VID/PID Spoofing ──────────────────────────────────────────────────────
     // VID/PID are set at COMPILE TIME via platformio.ini build flags:
     //   -DUSB_VID=0x046D  -DUSB_PID=0xC52B
@@ -73,9 +74,15 @@ void Hal::init() {
     Serial.printf("[HAL] USB identity: VID=%04X PID=%04X MFR=%s PROD=%s\n",
                   _activeVID, _activePID, CFG_USB_MFR, CFG_USB_PROD);
     Serial.println("[HAL] (VID/PID set via build flags, see platformio.ini)");
+#else
+    Serial.println("[HAL] " CFG_BOARD_NAME ": no USB-OTG — HID features disabled");
+    Serial.println("[HAL] (ESP32-C5 USB port is a fixed-function Serial/JTAG console)");
+#endif
 }
 
 // ─── USB Keyboard ────────────────────────────────────────────────────────────
+#if CFG_HAS_USB_HID
+
 void Hal::keyboardBegin() {
     usb.begin();                // start USB device, enumerate
     delay(500);                 // let host settle
@@ -115,6 +122,26 @@ void Hal::typeString(const char* s) {
     keyboard.print(s);          // type each character with natural delay
 }
 
+#else  // !CFG_HAS_USB_HID — ESP32-C5: nothing to type with
+
+void Hal::keyboardBegin() {
+    Serial.println("[HAL] keyboardBegin: no USB-OTG on this target");
+}
+
+void Hal::keyboardEnd() {}
+
+void Hal::press(uint8_t modifier, uint8_t keycode) {
+    (void)modifier; (void)keycode;
+}
+
+void Hal::release() {}
+
+void Hal::typeChar(char c) { (void)c; }
+
+void Hal::typeString(const char* s) { (void)s; }
+
+#endif
+
 void Hal::delayMs(uint16_t ms) {
     delay(ms);
 }
@@ -123,11 +150,16 @@ void Hal::delayMs(uint16_t ms) {
 void Hal::spoofIdentity(uint16_t vid, uint16_t pid) {
     _activeVID = vid;
     _activePID = pid;
+#if CFG_HAS_USB_HID
     // VID/PID descriptor is baked in at compile time (see platformio.ini).
     // To apply runtime changes: update platformio.ini → rebuild → reflash.
     // This stores the desired values but cannot hot-swap the USB descriptor.
     Serial.printf("[HAL] Spoof identity stored: %04X:%04X (requires rebuild to apply)\n",
                   vid, pid);
+#else
+    Serial.printf("[HAL] Spoof identity ignored: %04X:%04X (no USB-OTG on this target)\n",
+                  vid, pid);
+#endif
 }
 
 uint16_t Hal::getVID() { return _activeVID; }
@@ -138,6 +170,7 @@ uint16_t Hal::getPID() { return _activePID; }
 // - Windows typically sends 3 SET_REPORT (Caps, Num, Scroll lock state)
 // - macOS sends fewer/faster
 // - Linux sends 1-2, slower timing
+#if CFG_HAS_USB_HID
 
 void Hal::osDetectStart() {
     _setReportCount  = 0;
@@ -195,7 +228,20 @@ uint8_t Hal::osDetectCount() {
     return (uint8_t)_setReportCount;
 }
 
+#else  // !CFG_HAS_USB_HID
+
+void Hal::osDetectStart() {
+    Serial.println("[HAL] OS detect: unavailable (no USB HID on this target)");
+}
+void Hal::osDetectTick() {}
+uint8_t Hal::osDetectResult() { return OS_UNKNOWN; }
+uint8_t Hal::osDetectCount() { return 0; }
+
+#endif
+
 // ─── Keystroke Capture ───────────────────────────────────────────────────────
+#if CFG_HAS_USB_HID
+
 void Hal::captureBegin() {
     _capturePos = 0;
     _capturing = true;
@@ -220,13 +266,23 @@ bool Hal::isCapturing() {
     return _capturing;
 }
 
+#else
+
+void Hal::captureBegin() {
+    Serial.println("[HAL] EXFIL: capture unavailable (no USB HID on this target)");
+}
+void Hal::captureEnd() {}
+bool Hal::isCapturing() { return false; }
+
+#endif
+
 // ─── USB MSC (Composite HID+Storage) ─────────────────────────────────────────
 // Gated behind ENABLE_MSC because the read/write callbacks below are stubs:
 // reads return zeros and writes are discarded. Enumerating MSC in that state
 // would let the host *write* to a phantom drive and silently lose data, which
-// is worse than not exposing storage at all. Wire SD_MMC raw-sector access
+// is worse than not exposing storage at all. Wire SD raw-sector access
 // (readRAW/writeRAW) before defining ENABLE_MSC.
-#if defined(ENABLE_MSC) && __has_include(<USBMSC.h>)
+#if defined(ENABLE_MSC) && CFG_HAS_USB_HID && __has_include(<USBMSC.h>)
 
 static int32_t mscReadCb(uint32_t lba, uint32_t offset, void* buffer, uint32_t bufsize) {
     // TODO: SD_MMC.readRAW(buffer, lba) once available on this core.
@@ -248,7 +304,7 @@ bool Hal::enableMSC() {
         return false;
     }
 
-    uint64_t cardSize = SD_MMC.cardSize();
+    uint64_t cardSize = Storage::cardSize();
     uint32_t blockCount = (uint32_t)(cardSize / 512);
     if (blockCount == 0) blockCount = 2048;
 
@@ -272,10 +328,12 @@ bool Hal::mscActive() {
     return _mscEnabled;
 }
 
-#else  // MSC opt-in not set, or USBMSC not available
+#else  // MSC opt-in not set, no USB-OTG, or USBMSC not available
 
 bool Hal::enableMSC() {
-#if !defined(ENABLE_MSC)
+#if !CFG_HAS_USB_HID
+    Serial.println("[HAL] MSC: no USB-OTG on this target");
+#elif !defined(ENABLE_MSC)
     Serial.println("[HAL] MSC: disabled by build (define ENABLE_MSC after wiring SD raw I/O)");
 #else
     Serial.println("[HAL] MSC: USBMSC.h not available in this Arduino-ESP32 core");

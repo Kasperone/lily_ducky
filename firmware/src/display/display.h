@@ -1,8 +1,9 @@
 // =============================================================================
-// display/display.h — RGB LED status display (LCD-ready for when added later)
+// display/display.h — RGB LED + ST7735 LCD status display
 // =============================================================================
-// Provides semantic status through colour patterns.
-// LCD_ENABLED can be flipped to 1 in config.h when we add the screen.
+// Provides semantic status through colour patterns on the APA102, and —
+// when LCD_ENABLED=1 — a dashboard frame on the 80x160 ST7735 (both
+// boards use the identical panel).
 // =============================================================================
 #ifndef FUNNY_USB_DISPLAY_H
 #define FUNNY_USB_DISPLAY_H
