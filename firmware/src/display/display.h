@@ -5,8 +5,8 @@
 // when LCD_ENABLED=1 — a dashboard frame on the 80x160 ST7735 (both
 // boards use the identical panel).
 // =============================================================================
-#ifndef FUNNY_USB_DISPLAY_H
-#define FUNNY_USB_DISPLAY_H
+#ifndef LILY_DUCKY_DISPLAY_H
+#define LILY_DUCKY_DISPLAY_H
 
 #include "hal/hal.h"
 #include "interpreter/interpreter.h"

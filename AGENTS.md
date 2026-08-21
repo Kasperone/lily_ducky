@@ -1,4 +1,4 @@
-# funny_usb — DIY BadUSB on the LILYGO T-Dongle family
+# lily-ducky — DIY BadUSB on the LILYGO T-Dongle family
 
 Research doc: `/home/kasperone/Documents/vault/Claude Code Research/DIY-Rubber-Ducky-BadUSB-Deep-Research.md`
 
@@ -33,7 +33,7 @@ the T-Dongle-S3 (or another USB-OTG board).
   LCD). T-Dongle-S3: `SD_MMC` 1-bit mode (CLK=12, CMD=16, D0=14). Both behind `Storage::`
   API + `Storage::fs()` accessor.
 - **LCD**: ST7735 0.96" 80×160 IPS via SPI — TFT_eSPI, `LCD_ENABLED=1` in config.h.
-  Landscape (160×80), shows DuckPrime title, SSID, IP, auth token, client count, status corner
+  Landscape (160×80), shows Lily-Ducky title, SSID, IP, auth token, client count, status corner
 - **LED**: APA102, bit-banged in hal.cpp (no library) — C5: DI=5 CI=4; S3: DIN=40 CLK=39
 - **Button**: C5: GPIO28 (BOOT); S3: GPIO0
 - **Board definitions**: vendored in `firmware/boards/` (Lilygo-T-Dongle-C5.json, dongles3.json)
@@ -76,7 +76,7 @@ the T-Dongle-S3 (or another USB-OTG board).
 - Static arrays in interpreter (no malloc — embedded safe)
 - Auto-fire payload on USB plug-in (2s enumeration delay, configurable) — S3 only;
   C5 boots straight to WiFi C2 and runs the payload with typing as no-ops
-- WiFi C2: 192.168.4.1, SSID `DuckC2`, pass `quackquack` — change before any non-airgapped test
+- WiFi C2: 192.168.4.1, SSID `LilyC2`, pass `quackquack` — change before any non-airgapped test
 - C2 auth: 16-char token generated at boot, printed to USB-CDC serial; required on
   `X-Auth-Token` header for `PUT /api/payload/*`, `POST /api/run/*`, `POST /api/stop`
 - VID/PID: Logitech 0x046D/0xC52B via build flags (baked into TinyUSB descriptor at compile time)
