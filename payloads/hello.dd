@@ -1,4 +1,4 @@
 REM Hello World
-REM Types "Hello from Lily-Ducky!" and presses Enter
+REM Types "Hello from LillyDucky!" and presses Enter
 DELAY 1000
-STRINGLN Hello from Lily-Ducky!
+STRINGLN Hello from LillyDucky!

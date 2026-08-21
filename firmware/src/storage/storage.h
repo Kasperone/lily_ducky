@@ -5,8 +5,8 @@
 // T-Dongle-C5. Callers use the Storage API (or Storage::fs() when they
 // need a raw File handle) and never touch the SD library directly.
 // =============================================================================
-#ifndef LILY_DUCKY_STORAGE_H
-#define LILY_DUCKY_STORAGE_H
+#ifndef LILLY_DUCKY_STORAGE_H
+#define LILLY_DUCKY_STORAGE_H
 
 #include <Arduino.h>
 #include <FS.h>

@@ -74,7 +74,7 @@ static const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
 <html lang="en">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Lily-Ducky</title>
+<title>LillyDucky</title>
 <style>
  body{font-family:monospace;background:#1a1a2e;color:#e0e0e0;margin:0;padding:16px}
  h1{color:#0ff;border-bottom:1px solid #333;padding-bottom:8px}
@@ -102,7 +102,7 @@ static const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
 </style>
 </head>
 <body>
-<h1>Lily-Ducky</h1>
+<h1>LillyDucky</h1>
 <div class="status">
  <div class="status-item"><strong>State</strong><span id="state">?</span></div>
  <div class="status-item"><strong>Clients</strong><span id="clients">0</span></div>
@@ -113,7 +113,7 @@ static const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
 
 <div class="card">
  <h2>Editor — <span id="editTitle">new.dd</span></h2>
- <textarea id="editor" spellcheck="false"># DuckyScript payload\nREM Edit me or paste your payload here\nDELAY 1000\nSTRING Hello from LilyC2!\nENTER</textarea>
+ <textarea id="editor" spellcheck="false"># DuckyScript payload\nREM Edit me or paste your payload here\nDELAY 1000\nSTRING Hello from LillyC2!\nENTER</textarea>
  <div><button onclick="savePayload()">Save</button>
       <button onclick="loadEditor()" class="btn-run">Load</button>
       <button onclick="runPayload()" class="btn-run">Run Now</button></div>
@@ -130,10 +130,10 @@ static const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(
 let currentName = 'new.dd';
 
 function getToken() {
-    let t = localStorage.getItem('lily_ducky_token');
+    let t = localStorage.getItem('lillyDuckyToken');
     if (!t) {
         t = prompt('Auth token (printed to serial console at boot):') || '';
-        if (t) localStorage.setItem('lily_ducky_token', t);
+        if (t) localStorage.setItem('lillyDuckyToken', t);
     }
     return t;
 }
@@ -146,7 +146,7 @@ function authFetch(path, opts) {
     opts.headers['X-Auth-Token'] = getToken();
     return fetch(path, opts).then(r => {
         if (r.status === 401) {
-            localStorage.removeItem('lily_ducky_token');
+            localStorage.removeItem('lillyDuckyToken');
             log('401: token rejected, will re-prompt on next action');
         }
         return r;

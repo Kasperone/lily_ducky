@@ -9,8 +9,8 @@
 // OS_UNKNOWN, enableMSC() refuses. The interpreter and C2 code paths stay
 // identical across both boards.
 // =============================================================================
-#ifndef LILY_DUCKY_HAL_H
-#define LILY_DUCKY_HAL_H
+#ifndef LILLY_DUCKY_HAL_H
+#define LILLY_DUCKY_HAL_H
 
 #include "config.h"
 #include <Arduino.h>
@@ -175,4 +175,4 @@ namespace Hal {
 
 } // namespace Hal
 
-#endif // LILY_DUCKY_HAL_H
+#endif // LILLY_DUCKY_HAL_H

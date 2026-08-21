@@ -12,8 +12,8 @@
 //      keyboard. It runs the C2 dashboard, interpreter, LCD, and SD.
 //   T-Dongle-S3  (ESP32-S3)  — full BadUSB target (USB HID keyboard).
 // =============================================================================
-#ifndef LILY_DUCKY_CONFIG_H
-#define LILY_DUCKY_CONFIG_H
+#ifndef LILLY_DUCKY_CONFIG_H
+#define LILLY_DUCKY_CONFIG_H
 
 #if !defined(TARGET_DONGLE_C5) && !defined(TARGET_DONGLE_S3)
 #error "Define TARGET_DONGLE_C5 or TARGET_DONGLE_S3 (set via platformio.ini build_flags)"
@@ -93,7 +93,7 @@
 
 // ── WiFi C2 defaults ────────────────────────────────────────────────────────
 
-#define CFG_WIFI_SSID       "LilyC2"
+#define CFG_WIFI_SSID       "LillyC2"
 #define CFG_WIFI_PASS       "quackquack"
 #define CFG_WIFI_CHANNEL    6
 #define CFG_AP_IP           "192.168.4.1"
@@ -159,4 +159,4 @@
 #define CFG_AUTO_FIRE_ON_PLUG   1
 #define CFG_ENUMERATION_DELAY_MS 2000  // give the host time to see the HID
 
-#endif // LILY_DUCKY_CONFIG_H
+#endif // LILLY_DUCKY_CONFIG_H

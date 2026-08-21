@@ -11,8 +11,8 @@
 //
 // LCD layout (LCD_ENABLED=1, T-Dongle-S3 80×160 ST7735, landscape 160×80):
 //   ┌──────────────────────────────┐
-//   │ Lily-Ducky              ●STATE│  ← title + colour dot
-//   │ SSID:    LilyC2              │
+//   │ LillyDucky              ●STATE│  ← title + colour dot
+//   │ SSID:    LillyC2              │
 //   │ IP:      192.168.4.1         │
 //   │ Token:   ABC123XYZ987QRSTU   │  ← yellow, lets the user skip serial
 //   │ Clients: 0                   │
@@ -105,7 +105,7 @@ static void paintStaticFrame()
     // Title (cyan)
     _tft.setTextColor(TFT_CYAN, TFT_BLACK);
     _tft.setCursor(COL_LABEL, ROW_TITLE);
-    _tft.print("Lily-Ducky");
+    _tft.print("LillyDucky");
 
     // Labels (grey)
     _tft.setTextColor(TFT_DARKGREY, TFT_BLACK);

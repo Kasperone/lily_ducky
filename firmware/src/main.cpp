@@ -1,5 +1,5 @@
 // =============================================================================
-// main.cpp — Lily-Ducky: USB Rubber Ducky on the LILYGO T-Dongle family
+// main.cpp — LillyDucky: USB Rubber Ducky on the LILYGO T-Dongle family
 // =============================================================================
 // Entry point. Wires together: HAL, Storage, Interpreter, Display, C2 WiFi.
 //
@@ -120,7 +120,7 @@ void setup()
 {
     Serial.begin(115200);
     delay(500);
-    Serial.println("\n[MAIN] Lily-Ducky v0.2 — " CFG_BOARD_NAME);
+    Serial.println("\n[MAIN] LillyDucky v0.2 — " CFG_BOARD_NAME);
     Serial.println("       USB Rubber Ducky lab on " CFG_MCU_NAME);
 
     // 1. Init HAL (LED, button, USB descriptors where available)
