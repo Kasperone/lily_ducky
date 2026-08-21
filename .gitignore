@@ -1,0 +1,23 @@
+# Build artifacts
+firmware/.pio/
+firmware/.platformio/
+firmware/build/
+
+# USB / upload artifacts
+*.uf2
+
+# IDE
+.vscode/
+.idea/
+
+# Agent state (local to each clone — Hermes uses ~/.hermes for shared state)
+.hermes/
+.claude/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Payloads on SD (keep sample .dd files, ignore user-created ones)
+# payloads/*.dd  — keeping all in repo for now
+

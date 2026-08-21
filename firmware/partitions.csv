@@ -1,0 +1,8 @@
+# Firmware partition table — referenced by platformio.ini
+# Uses SD card for external storage (payloads + loot).
+# 16 MB flash → keep spiffs small (SPIFFS not used, SD card handles payloads).
+
+# Name,     Type, SubType,  Offset,   Size,    Flags
+nvs,        data, nvs,      0x9000,   0x5000,
+otadata,    data, ota,      0xe000,   0x2000,
+app0,       app,  ota_0,    0x10000,  0x300000,

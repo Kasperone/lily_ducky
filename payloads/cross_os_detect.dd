@@ -1,0 +1,25 @@
+REM Cross-platform router with OS detection (DuckyScript 3.0)
+REM Detects the OS and branches accordingly
+
+VAR $os_detected = 0
+
+IF ($_OS == WINDOWS) THEN
+    GUI r
+    DELAY 500
+    STRINGLN cmd
+    DELAY 500
+    STRINGLN echo DuckPrime detected Windows
+    ENTER
+ELSE_IF ($_OS == LINUX) THEN
+    CTRL ALT t
+    DELAY 500
+    STRINGLN echo DuckPrime detected Linux
+    ENTER
+ELSE_IF ($_OS == MACOS) THEN
+    GUI SPACE
+    DELAY 500
+    STRINGLN terminal
+    DELAY 1000
+    STRINGLN echo DuckPrime detected macOS
+    ENTER
+END_IF

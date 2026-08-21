@@ -1,0 +1,4 @@
+REM Hello World
+REM Types "Hello from DuckPrime!" and presses Enter
+DELAY 1000
+STRINGLN Hello from DuckPrime!

@@ -1,0 +1,11 @@
+REM Windows — silent install via winget (elevated)
+REM Open elevated PowerShell
+DELAY 500
+GUI r
+DELAY 500
+STRING powershell Start-Process powershell -Verb runAs
+ENTER
+DELAY 2000
+ALT y
+DELAY 1000
+STRINGLN winget install --silent --accept-package-agreements --accept-source-agreements 7zip.7zip
