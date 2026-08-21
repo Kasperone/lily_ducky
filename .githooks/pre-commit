@@ -1,0 +1,60 @@
+#!/bin/sh
+# =============================================================================
+# pre-commit — secret & credential gate (LillyDucky)
+# =============================================================================
+# Scans ADDED lines in the staged diff for patterns that look like secrets
+# or credentials and refuses the commit when something matches. Active on
+# every `git commit` once installed (run scripts/install-hooks.sh once per
+# clone).
+#
+# Scope: staged changes only — never blocks what's already in history.
+# A flagged line can be a known-safe public default; see the WHITELIST
+# below before adding new patterns. Keep that list minimal.
+#
+# Bypass (emergencies only, and think twice — you're about to publish):
+#   git commit --no-verify
+# =============================================================================
+
+STAGED=$(git diff --cached)
+[ -z "$STAGED" ] && exit 0
+
+# Known-safe public defaults — the lab AP password and USB VID/PID are
+# intentionally public (documented in README/config.h).
+WHITELIST='quackquack|LillyC2|0x046D|0xC52B'
+
+# Added lines only: '+' prefix in diff output. Then whitelist, then scan.
+MATCHES=$(printf '%s\n' "$STAGED" \
+    | grep -E '^\+' \
+    | grep -viE "$WHITELIST" \
+    | grep -iE \
+        -e 'BEGIN[ ]?(RSA|EC|OPENSSH|DSA|PGP)[ ]PRIVATE KEY' \
+        -e 'AKIA[0-9A-Z]{16}' \
+        -e 'ghp_[A-Za-z0-9]{36,}' \
+        -e 'gho_[A-Za-z0-9]{36,}' \
+        -e 'ghu_[A-Za-z0-9]{36,}' \
+        -e 'ghs_[A-Za-z0-9]{36,}' \
+        -e 'github_pat_[A-Za-z0-9_]{20,}' \
+        -e 'xox[baprs]-[A-Za-z0-9-]{10,}' \
+        -e 'sk-[A-Za-z0-9]{20,}' \
+        -e 'sk_live_[A-Za-z0-9]{16,}' \
+        -e 'sk_test_[A-Za-z0-9]{16,}' \
+        -e 'eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{5,}' \
+        -e '(api[_-]?key|api[_-]?secret|client[_-]?secret|access[_-]?token|auth[_-]?token|private[_-]?key)[[:space:]]*[:=][[:space:]]*["'"'"'][A-Za-z0-9_/+=.-]{12,}["'"'"']' \
+        -e 'password[[:space:]]*[:=][[:space:]]*["'"'"'][^"'"'"']{8,}["'"'"']' \
+        -e 'passwd[[:space:]]*[:=][[:space:]]*["'"'"'][^"'"'"']{8,}["'"'"']' \
+)
+
+if [ -n "$MATCHES" ]; then
+    echo "============================================================"
+    echo " COMMIT BLOCKED — possible secret or credential in staged diff"
+    echo "============================================================"
+    printf '%s\n' "$MATCHES" | cut -c1-160
+    echo "------------------------------------------------------------"
+    echo "If this is a known-safe public default, add it to the"
+    echo "WHITELIST in .githooks/pre-commit (keep that list minimal)."
+    echo "Emergency bypass: git commit --no-verify  (think twice)."
+    echo "============================================================"
+    exit 1
+fi
+
+exit 0

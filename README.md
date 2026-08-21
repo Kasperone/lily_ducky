@@ -1,7 +1,13 @@
-# Lily-Ducky
+# LillyDucky
 
 > A DIY USB Rubber Ducky / BadUSB learning platform on the LILYGO T-Dongle family.
 > Built to understand **how** keystroke-injection attacks work — so you can defend against them.
+
+> ### 🚧 Early stage — untested code
+> This project is at its **starting point**: the firmware has been written and
+> ported but **never compiled, flashed, or run on real hardware**. Expect build
+> errors and bugs. Treat everything here as a work-in-progress learning codebase,
+> not working software — and verify it all yourself before trusting it.
 
 ---
 
