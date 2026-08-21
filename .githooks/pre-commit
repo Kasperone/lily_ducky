@@ -1,6 +1,6 @@
 #!/bin/sh
 # =============================================================================
-# pre-commit — secret & credential gate (LillyDucky)
+# pre-commit — secret & credential gate (LilyDucky)
 # =============================================================================
 # Scans ADDED lines in the staged diff for patterns that look like secrets
 # or credentials and refuses the commit when something matches. Active on
@@ -20,7 +20,7 @@ STAGED=$(git diff --cached)
 
 # Known-safe public defaults — the lab AP password and USB VID/PID are
 # intentionally public (documented in README/config.h).
-WHITELIST='quackquack|LillyC2|0x046D|0xC52B'
+WHITELIST='quackquack|LilyC2|0x046D|0xC52B'
 
 # Added lines only: '+' prefix in diff output. Then whitelist, then scan.
 MATCHES=$(printf '%s\n' "$STAGED" \

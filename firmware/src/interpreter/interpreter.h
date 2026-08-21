@@ -1,8 +1,8 @@
 // =============================================================================
 // interpreter.h - DuckyScript parser & executor (Tier 1 + Tier 2)
 // =============================================================================
-#ifndef LILLY_DUCKY_INTERPRETER_H
-#define LILLY_DUCKY_INTERPRETER_H
+#ifndef LILY_DUCKY_INTERPRETER_H
+#define LILY_DUCKY_INTERPRETER_H
 
 #include <Arduino.h>
 #include "config.h"

@@ -1,4 +1,4 @@
-# LillyDucky
+# LilyDucky
 
 > A DIY USB Rubber Ducky / BadUSB learning platform on the LILYGO T-Dongle family.
 > Built to understand **how** keystroke-injection attacks work — so you can defend against them.
@@ -25,7 +25,7 @@ regardless of intent, and "it was just a demo" is not a defense.
 | 🎯 **Your own hardware only** | Test exclusively against machines you own — lab VMs, spare laptops. Never plug into employer, public, or borrowed systems. |
 | 📄 **Written authorization** | Any test on someone else's equipment requires explicit written permission first. |
 | 📦 **Physical security** | Treat the flashed dongle like a loaded weapon: label it, store it, never leave it unattended where someone could plug it in. |
-| 🔒 **Change default credentials** | The WiFi C2 defaults (`LillyC2` / `quackquack`) are public. Change them in `firmware/src/config.h` before any test that isn't fully air-gapped. |
+| 🔒 **Change default credentials** | The WiFi C2 defaults (`LilyC2` / `quackquack`) are public. Change them in `firmware/src/config.h` before any test that isn't fully air-gapped. |
 | 🧹 **Wipe before disposal** | The SD card stores payloads and captured keystrokes (`/loot`). Wipe it before selling, lending, or trashing the device. |
 
 **Jurisdiction matters.** Some countries restrict possession or import of "hacker tools".
@@ -38,7 +38,7 @@ By using this repository you accept that the authors are not responsible for mis
 
 ## 🧭 What this project is
 
-LillyDucky emulates a USB keyboard and executes **DuckyScript** payloads (the language of
+LilyDucky emulates a USB keyboard and executes **DuckyScript** payloads (the language of
 the Hak5 Rubber Ducky) at superhuman speed. It also runs a **WiFi C2 dashboard** to
 control the device remotely. The goal is learning by building: USB enumeration, HID
 descriptors, interpreters, embedded web servers — each layer is small, commented, and
@@ -101,7 +101,7 @@ S3 it types into the host.
 
 ### 4. Use the WiFi dashboard (both boards)
 
-1. Connect to the AP: SSID `LillyC2` (change it! see safety box above)
+1. Connect to the AP: SSID `LilyC2` (change it! see safety box above)
 2. Open `http://192.168.4.1` in a browser
 3. Enter the auth token from the serial console when prompted
 4. Edit / upload / run / stop payloads from the browser — no SD card reader needed

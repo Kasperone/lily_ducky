@@ -8,18 +8,18 @@ IF ($_OS == WINDOWS) THEN
     DELAY 500
     STRINGLN cmd
     DELAY 500
-    STRINGLN echo LillyDucky detected Windows
+    STRINGLN echo LilyDucky detected Windows
     ENTER
 ELSE_IF ($_OS == LINUX) THEN
     CTRL ALT t
     DELAY 500
-    STRINGLN echo LillyDucky detected Linux
+    STRINGLN echo LilyDucky detected Linux
     ENTER
 ELSE_IF ($_OS == MACOS) THEN
     GUI SPACE
     DELAY 500
     STRINGLN terminal
     DELAY 1000
-    STRINGLN echo LillyDucky detected macOS
+    STRINGLN echo LilyDucky detected macOS
     ENTER
 END_IF
