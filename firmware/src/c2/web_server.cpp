@@ -15,6 +15,7 @@
 #include <esp_system.h>  // esp_random() for token seed
 #include "../storage/storage.h"
 #include "../interpreter/interpreter.h"
+#include "../hal/hal.h"
 #include "config.h"
 
 static WebServer _server(CFG_HTTP_PORT);
@@ -296,7 +297,7 @@ static void handleListPayloads()
 {
     // [{"name":"hello.dd","size":123},...]
     String j = "[";
-    File dir = SD_MMC.open(SD_PAYLOAD_DIR);
+    File dir = Storage::fs().open(SD_PAYLOAD_DIR);
     if (dir) {
         File entry = dir.openNextFile();
         bool first = true;
@@ -327,7 +328,7 @@ static void handleGetPayload()
     }
     char path[64];
     snprintf(path, sizeof(path), "%s/%s", SD_PAYLOAD_DIR, name.c_str());
-    File f = SD_MMC.open(path);
+    File f = Storage::fs().open(path);
     if (!f) {
         _server.send(404, "text/plain", "Not found");
         return;
@@ -352,7 +353,7 @@ static void handlePutPayload()
         Storage::createDir(SD_PAYLOAD_DIR);
     }
 
-    File f = SD_MMC.open(path, FILE_WRITE);
+    File f = Storage::fs().open(path, FILE_WRITE);
     if (!f) {
         _server.send(500, "text/plain", "Cannot write");
         return;

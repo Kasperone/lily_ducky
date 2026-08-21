@@ -1,12 +1,16 @@
 // =============================================================================
-// main.cpp — DuckPrime: USB Rubber Ducky on the T-Dongle-S3 (ESP32-S3)
+// main.cpp — DuckPrime: USB Rubber Ducky on the LILYGO T-Dongle family
 // =============================================================================
 // Entry point. Wires together: HAL, Storage, Interpreter, Display, C2 WiFi.
-// Boot sequence: init → wait for USB enumeration → auto-fire payload from SD.
+//
+// Boot sequence:
+//   T-Dongle-S3 (CFG_HAS_USB_HID=1): init → USB enumerate → auto-fire payload
+//   T-Dongle-C5 (CFG_HAS_USB_HID=0): init → WiFi C2 lab node. The C5 has no
+//   USB-OTG peripheral, so payloads still parse and execute but type nothing;
+//   the device is exercised through the dashboard, LCD, and SD card.
 // =============================================================================
 
 #include <Arduino.h>
-#include <USB.h>
 
 // Project modules
 #include "config.h"
@@ -26,6 +30,7 @@ static Interpreter interp;
 
 static void fireDefaultPayload()
 {
+#if CFG_HAS_USB_HID
     char* buf = NULL;
     int len = 0;
 
@@ -81,6 +86,26 @@ static void fireDefaultPayload()
     Serial.println("[MAIN] No payload found on SD");
     Hal::ledBlink(255, 0, 0, 3, 200);
     Hal::statusIdle();
+#else
+    // C5: no USB HID — the payload still parses and executes, but typing is
+    // a no-op. Keeps the interpreter state machine (LED, LCD, timing) fully
+    // exercisable for learning and dashboard testing.
+    char* buf = NULL;
+    int len = 0;
+    if (Storage::payloadExists(CFG_PAYLOAD_FILENAME) &&
+        Storage::loadPayload(CFG_PAYLOAD_FILENAME, &buf, &len)) {
+        Serial.printf("[MAIN] Loading %s (%d bytes) — typing is a no-op on this target\n",
+                      CFG_PAYLOAD_FILENAME, len);
+        Hal::statusRunning();
+        interp.loadBuffer(buf, len);
+        free(buf);
+        interp.run();
+        return;
+    }
+    Serial.println("[MAIN] No payload found on SD");
+    Hal::ledBlink(255, 0, 0, 3, 200);
+    Hal::statusIdle();
+#endif
 }
 
 static void startWiFi()
@@ -95,18 +120,18 @@ void setup()
 {
     Serial.begin(115200);
     delay(500);
-    Serial.println("\n[MAIN] DuckPrime v0.1 — T-Dongle-S3");
-    Serial.println("       USB Rubber Ducky on ESP32-S3");
+    Serial.println("\n[MAIN] DuckPrime v0.2 — " CFG_BOARD_NAME);
+    Serial.println("       USB Rubber Ducky lab on " CFG_MCU_NAME);
 
-    // 1. Init HAL (LED, button, USB descriptors)
+    // 1. Init HAL (LED, button, USB descriptors where available)
     Serial.print("[MAIN] Init HAL... ");
     Hal::init();
     Serial.println("OK");
 
-    // 2. Register USB keyboard
+    // 2. Register USB keyboard (no-op on C5)
     Serial.print("[MAIN] USB HID keyboard... ");
     Hal::keyboardBegin();
-    Serial.println("OK");
+    Serial.println(CFG_HAS_USB_HID ? "OK" : "N/A");
 
     // 3. Init SD card (optional — system works without it, just no payload files)
     Serial.print("[MAIN] SD card... ");
@@ -132,7 +157,7 @@ void setup()
     startWiFi();
     Hal::statusWiFi();
 
-    // 6. Fire default payload if configured
+    // 6. Fire default payload if configured (S3 only; C5 has no HID)
 #if CFG_AUTO_FIRE_ON_PLUG
     if (sdOk) {
         fireDefaultPayload();
@@ -171,10 +196,5 @@ void loop()
             Serial.println("[MAIN] Button: started payload");
         }
         delay(200);  // debounce
-    }
-
-    // If interpreter finished and we're in a finished state, reset
-    if (interp.getState() == INTERP_COMPLETE || interp.getState() == INTERP_ERROR) {
-        // Display already handles this
     }
 }
