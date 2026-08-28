@@ -133,9 +133,10 @@ static const LayoutOverride LAYOUT_DE_T[] = {
     {'Z', 0x1d, HK_MOD_LSHIFT},
     {'y', 0x1c, 0},                          // y → physical z position (scancode 0x1c)
     {'Y', 0x1c, HK_MOD_LSHIFT},
-    // Special characters
+    // Special characters (ASCII only — the interpreter feeds one byte per
+    // char, so multibyte UTF-8 glyphs like ß/€/° can never match a table
+    // entry and are left out; see AGENTS.md layout caveat)
     {'@', 0x14, KEY_MOD_RALT},               // AltGr+Q
-    {'€', 0x08, KEY_MOD_RALT},               // AltGr+E
     {'#', 0x31, 0},                           // on the key left of Enter (US backslash)
     {'\\',0x2d, KEY_MOD_RALT},               // AltGr+ß
     {'[', 0x2f, KEY_MOD_RALT},               // AltGr+8
@@ -144,8 +145,6 @@ static const LayoutOverride LAYOUT_DE_T[] = {
     {'}', 0x30, KEY_MOD_RALT},               // AltGr+0
     {'~', 0x30, KEY_MOD_RALT},               // AltGr++ (the key right of ß)
     {'^', 0x35, 0},                           // dead key position (grave on US)
-    {'°', 0x35, HK_MOD_LSHIFT},              // Shift+dead key
-    {'ß', 0x2d, 0},                           // ß on the minus key position
     {'?', 0x2d, HK_MOD_LSHIFT},              // Shift+ß → ?
     {';', 0x36, HK_MOD_LSHIFT},              // Shift+,
     {':', 0x37, HK_MOD_LSHIFT},              // Shift+.
@@ -440,7 +439,7 @@ void Interpreter::tick()
             //   - IF/ELSE_IF/ELSE skipped to a new branch line; that line
             //     is at _pc and should execute on the next tick.
             //   - Cooperative pause (e.g. DETECT_OS) is waiting on a timer.
-            // Break so the outer loop() pumps WebServer/Display/etc. before
+            // Break so the outer loop() pumps C2Server/Display/etc. before
             // we re-enter.
             break;
         }
@@ -517,7 +516,7 @@ bool Interpreter::execLine(int lineno)
     }
 
     // ── Security: DETECT_OS — trigger OS detection, set $_OS ─────────────
-    // Runs cooperatively so the C2 WebServer keeps ticking. The interpreter
+    // Runs cooperatively so the C2 server keeps ticking. The interpreter
     // pauses on this line: we return false (don't advance PC) until the
     // detection window closes, then commit the result and advance.
     if (strcmp(text, "DETECT_OS") == 0) {

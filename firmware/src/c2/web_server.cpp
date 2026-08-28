@@ -399,7 +399,7 @@ static void handleNotFound()
 }
 
 // ── Public: start / stop / tick ─────────────────────────────────────────────
-bool WebServer::start()
+bool C2Server::start()
 {
     Serial.print("[C2] Starting SoftAP...");
     WiFi.softAP(CFG_WIFI_SSID, CFG_WIFI_PASS, CFG_WIFI_CHANNEL, 0, 1);
@@ -431,7 +431,7 @@ bool WebServer::start()
     return true;
 }
 
-void WebServer::stop()
+void C2Server::stop()
 {
     _server.stop();
     WiFi.softAPdisconnect(true);
@@ -439,25 +439,25 @@ void WebServer::stop()
     Serial.println("[C2] Server stopped");
 }
 
-void WebServer::tick()
+void C2Server::tick()
 {
     if (_running) _server.handleClient();
 }
 
-bool WebServer::running() { return _running; }
+bool C2Server::running() { return _running; }
 
-int WebServer::connectedClients()
+int C2Server::connectedClients()
 {
     // WiFi.softAPgetStationNum() — number of connected stations
     return WiFi.softAPgetStationNum();
 }
 
-IPAddress WebServer::apIP() { return WiFi.softAPIP(); }
+IPAddress C2Server::apIP() { return WiFi.softAPIP(); }
 
-const char* WebServer::authToken() { return _authToken; }
+const char* C2Server::authToken() { return _authToken; }
 
 // Setter for the interpreter pointer (call from main AFTER constructing interp)
-void WebServer::setInterpreter(Interpreter* interp)
+void C2Server::setInterpreter(Interpreter* interp)
 {
     _interp = interp;
 }
