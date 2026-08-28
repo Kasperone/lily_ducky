@@ -440,7 +440,7 @@ void Interpreter::tick()
             //   - IF/ELSE_IF/ELSE skipped to a new branch line; that line
             //     is at _pc and should execute on the next tick.
             //   - Cooperative pause (e.g. DETECT_OS) is waiting on a timer.
-            // Break so the outer loop() pumps WebServer/Display/etc. before
+            // Break so the outer loop() pumps C2Server/Display/etc. before
             // we re-enter.
             break;
         }
@@ -517,7 +517,7 @@ bool Interpreter::execLine(int lineno)
     }
 
     // ── Security: DETECT_OS — trigger OS detection, set $_OS ─────────────
-    // Runs cooperatively so the C2 WebServer keeps ticking. The interpreter
+    // Runs cooperatively so the C2 server keeps ticking. The interpreter
     // pauses on this line: we return false (don't advance PC) until the
     // detection window closes, then commit the result and advance.
     if (strcmp(text, "DETECT_OS") == 0) {

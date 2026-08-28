@@ -110,8 +110,8 @@ static void fireDefaultPayload()
 
 static void startWiFi()
 {
-    if (WebServer::start()) {
-        WebServer::setInterpreter(&interp);
+    if (C2Server::start()) {
+        C2Server::setInterpreter(&interp);
     }
 }
 
@@ -177,13 +177,13 @@ void loop()
     Hal::osDetectTick();
 
     // Tick WiFi C2
-    WebServer::tick();
+    C2Server::tick();
 
     // Update display based on current state
     Display::update(
         interp.getState(),
-        WebServer::running(),
-        WebServer::connectedClients()
+        C2Server::running(),
+        C2Server::connectedClients()
     );
 
     // Check button press → trigger payload (alternative to auto-fire)

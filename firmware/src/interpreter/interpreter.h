@@ -67,7 +67,7 @@ private:
     int _callTop;
 
     // Cooperative DETECT_OS state — the interpreter pauses on the DETECT_OS
-    // line for CFG_OS_DETECT_WINDOW_MS so the C2 WebServer keeps ticking.
+    // line for CFG_OS_DETECT_WINDOW_MS so the C2 server keeps ticking.
     bool     _osDetectStarted;
     uint32_t _osDetectBeganMs;
 

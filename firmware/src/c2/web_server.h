@@ -9,7 +9,10 @@
 #include <WebServer.h>
 #include "config.h"
 
-namespace WebServer {
+// Named C2Server (not WebServer): the Arduino core's <WebServer.h> already
+// declares class WebServer — a namespace of the same name is a hard compile
+// error ("redeclared as different kind of entity").
+namespace C2Server {
 
     // Start the server (creates SoftAP, serves HTTP)
     bool start();
@@ -29,6 +32,6 @@ namespace WebServer {
     // Set the interpreter pointer for API endpoints
     void setInterpreter(class Interpreter* interp);
 
-} // namespace WebServer
+} // namespace C2Server
 
 #endif

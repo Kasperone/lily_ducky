@@ -139,7 +139,7 @@ static void lcdUpdate(InterpState s, bool c2Running, int clients)
     cur.clients    = clients;
     IPAddress ip   = WiFi.softAPIP();
     snprintf(cur.ip, sizeof(cur.ip), "%s", ip.toString().c_str());
-    const char* tok = WebServer::authToken();
+    const char* tok = C2Server::authToken();
     snprintf(cur.token, sizeof(cur.token), "%s", tok ? tok : "");
 
     if (_last.firstPaint ||
