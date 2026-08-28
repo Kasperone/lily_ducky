@@ -18,7 +18,10 @@
 // ─── USB Keyboard instance (S3 only) ────────────────────────────────────────
 #if CFG_HAS_USB_HID
 static USBHIDKeyboard keyboard;
-static USB usb;  // manages USB device lifecycle
+// No local USB device instance: Arduino-ESP32 3.x exposes a single global
+// (`extern ESPUSB USB` in USB.h) instead of the 2.x `class USB`.
+static void onKeyboardLedEvent(void* arg, esp_event_base_t event_base,
+                               int32_t event_id, void* event_data);
 #endif
 
 // ─── VID/PID Spoofing State ──────────────────────────────────────────────────
@@ -84,7 +87,8 @@ void Hal::init() {
 #if CFG_HAS_USB_HID
 
 void Hal::keyboardBegin() {
-    usb.begin();                // start USB device, enumerate
+    keyboard.onEvent(ARDUINO_USB_HID_KEYBOARD_LED_EVENT, onKeyboardLedEvent);
+    USB.begin();                // start USB device, enumerate
     delay(500);                 // let host settle
     keyboard.begin();
 }
@@ -95,7 +99,10 @@ void Hal::keyboardEnd() {
 }
 
 void Hal::press(uint8_t modifier, uint8_t keycode) {
-    keyboard.press(keycode, modifier);
+    // 3.x press(k) takes ASCII only; modifier+raw-scancode goes through the
+    // low-level KeyReport (same wire format the 2.x two-arg press produced).
+    KeyReport report = {modifier, 0, {keycode, 0, 0, 0, 0, 0}};
+    keyboard.sendReport(&report);
 
     // ── Keystroke capture: record outgoing keycodes, auto-flushing to SD
     //    when the buffer fills so long sessions don't silently drop data.
@@ -166,11 +173,29 @@ uint16_t Hal::getVID() { return _activeVID; }
 uint16_t Hal::getPID() { return _activePID; }
 
 // ─── OS Detection ────────────────────────────────────────────────────────────
-// Strategy: poll keyboard LED status register during enumeration window.
+// Strategy: count keyboard LED output reports during the enumeration window.
 // - Windows typically sends 3 SET_REPORT (Caps, Num, Scroll lock state)
 // - macOS sends fewer/faster
 // - Linux sends 1-2, slower timing
+// 3.x note: getLEDsStatus() was removed; LED output reports now arrive as
+// ARDUINO_USB_HID_KEYBOARD_LED_EVENT events, which are more precise than the
+// old poll anyway (each event is one host SET_REPORT).
 #if CFG_HAS_USB_HID
+
+static void onKeyboardLedEvent(void* arg, esp_event_base_t event_base,
+                               int32_t event_id, void* event_data)
+{
+    (void)arg; (void)event_base; (void)event_id;
+    if (!_osDetectRunning) return;
+    arduino_usb_hid_keyboard_event_data_t* data =
+        (arduino_usb_hid_keyboard_event_data_t*)event_data;
+    if (data->leds != _lastLedState) {
+        if (_setReportCount == 0) _firstReportTime = millis();
+        _lastReportTime = millis();
+        _setReportCount++;
+        _lastLedState = data->leds;
+    }
+}
 
 void Hal::osDetectStart() {
     _setReportCount  = 0;
@@ -196,15 +221,7 @@ void Hal::osDetectTick() {
                       osDetectResult() == OS_LINUX   ? "LINUX"   : "UNKNOWN");
         return;
     }
-
-    // Poll LED status register — changes indicate SET_REPORT from host
-    uint8_t leds = keyboard.getLEDsStatus();
-    if (leds != _lastLedState) {
-        if (_setReportCount == 0) _firstReportTime = millis();
-        _lastReportTime = millis();
-        _setReportCount++;
-        _lastLedState = leds;
-    }
+    // LED events are counted in onKeyboardLedEvent; nothing to poll here.
 }
 
 uint8_t Hal::osDetectResult() {
