@@ -114,8 +114,10 @@ bool Storage::listPayloads(String* out, int maxLen)
     File entry = dir.openNextFile();
     while (entry) {
         if (!entry.isDirectory()) {
-            if (out->length() + entry.name().length() + 2 < (size_t)maxLen) {
-                out->concat(entry.name());
+            // File::name() returns const char* in Arduino-ESP32 3.x
+            const char* nm = entry.name();
+            if (out->length() + strlen(nm) + 2 < (size_t)maxLen) {
+                out->concat(nm);
                 out->concat(",");
             }
         }

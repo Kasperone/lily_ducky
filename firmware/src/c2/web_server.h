@@ -12,6 +12,11 @@
 // Named C2Server (not WebServer): the Arduino core's <WebServer.h> already
 // declares class WebServer — a namespace of the same name is a hard compile
 // error ("redeclared as different kind of entity").
+
+// Forward-declare at global scope: inside the namespace, `class Interpreter`
+// would declare a NEW incomplete type C2Server::Interpreter.
+class Interpreter;
+
 namespace C2Server {
 
     // Start the server (creates SoftAP, serves HTTP)
@@ -30,7 +35,7 @@ namespace C2Server {
     const char* authToken();
 
     // Set the interpreter pointer for API endpoints
-    void setInterpreter(class Interpreter* interp);
+    void setInterpreter(Interpreter* interp);
 
 } // namespace C2Server
 
