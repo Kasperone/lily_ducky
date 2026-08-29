@@ -10,6 +10,10 @@
 #include "hal.h"
 #include "storage/storage.h"
 
+#if CFG_RELEASE_JTAG_LED_PINS
+#include <soc/usb_serial_jtag_struct.h>
+#endif
+
 #if CFG_HAS_USB_HID
 #include <USB.h>
 #include <USBHIDKeyboard.h>
@@ -62,6 +66,13 @@ static bool _mscEnabled = false;
 void Hal::init() {
     // Button setup
     pinMode(PIN_BUTTON, INPUT_PULLUP);
+
+#if CFG_RELEASE_JTAG_LED_PINS
+    // The APA102 sits on the MTCK/MTDI pads; until this bit is set the
+    // USB-JTAG controller drives them (hard white LED, GPIO writes lost).
+    // Must happen before the first ledOff()/status colour. See config.h.
+    USB_SERIAL_JTAG.conf0.usb_jtag_bridge_en = 1;
+#endif
 
     // LED: data and clock pins as outputs (APA102 is SPI-like, bit-banged)
     pinMode(PIN_LED_DATA,  OUTPUT);

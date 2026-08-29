@@ -28,10 +28,19 @@
 #define CFG_HAS_USB_HID  0
 #define CFG_BOARD_NAME   "T-Dongle-C5"
 #define CFG_MCU_NAME     "ESP32-C5"
+// The board's APA102 is wired to the chip's MTCK/MTDI pads (GPIO4/5), which
+// double as the USB Serial/JTAG controller's JTAG pins. At power-on the JTAG
+// hardware owns those pads (TDI idles high with clock edges — exactly an
+// APA102 white-bit stream), so GPIO writes never reach the LED and it glows
+// hard white. Setting USB_SERIAL_JTAG.conf0.usb_jtag_bridge_en releases the
+// pads to the GPIO matrix (cost: OpenOCD-over-USB-JTAG on those pads, which
+// this board doesn't need — flashing/debugging still works over CDC/UART).
+#define CFG_RELEASE_JTAG_LED_PINS 1
 #else
 #define CFG_HAS_USB_HID  1
 #define CFG_BOARD_NAME   "T-Dongle-S3"
 #define CFG_MCU_NAME     "ESP32-S3"
+#define CFG_RELEASE_JTAG_LED_PINS 0
 #endif
 
 // ── Hardware pin assignments ────────────────────────────────────────────────
