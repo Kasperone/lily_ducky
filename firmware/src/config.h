@@ -159,4 +159,10 @@
 #define CFG_AUTO_FIRE_ON_PLUG   1
 #define CFG_ENUMERATION_DELAY_MS 2000  // give the host time to see the HID
 
+// How long setup() waits for the USB console host to connect before printing
+// the boot log (hardware-CDC targets only). Bytes printed before the host
+// enumerates are dropped — including the C2 auth token, which is otherwise
+// unrecoverable until the next reset. Timeout keeps a headless boot finite.
+#define CFG_SERIAL_CONNECT_WAIT_MS 8000
+
 #endif // LILY_DUCKY_CONFIG_H
