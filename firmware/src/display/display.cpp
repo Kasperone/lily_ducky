@@ -34,6 +34,10 @@
 // ─── LED state (unchanged from pre-LCD version) ───────────────────────────
 static unsigned long _completeSince = 0;
 static bool _errorShown = false;
+// STOPPED blinks amber once (3 pulses) then holds steady — ledBlink() blocks
+// ~900 ms, so without the one-shot guard every loop() tick would re-blink
+// and starve C2 + button handling while the state stays "stopped".
+static bool _stoppedBlinked = false;
 
 #if LCD_ENABLED
 
@@ -123,9 +127,11 @@ static void paintStaticFrame()
 static void lcdInit()
 {
     _tft.init();
-    _tft.setRotation(1);                 // landscape: USB connector right
+    _tft.setRotation(3);                 // landscape, LilyGO factory orientation
     pinMode(PIN_LCD_BL, OUTPUT);
-    digitalWrite(PIN_LCD_BL, HIGH);
+    // Polarity is target-specific (C5: active-LOW) — TFT_BACKLIGHT_ON carries
+    // the correct level per env in platformio.ini.
+    digitalWrite(PIN_LCD_BL, TFT_BACKLIGHT_ON);
     paintStaticFrame();
 }
 
@@ -181,6 +187,7 @@ void Display::init()
     Hal::statusIdle();
     _completeSince = 0;
     _errorShown = false;
+    _stoppedBlinked = false;
 #if LCD_ENABLED
     lcdInit();
 #endif
@@ -202,6 +209,7 @@ void Display::update(InterpState state, bool c2Running, int clients)
             break;
 
         case INTERP_RUNNING:
+            _stoppedBlinked = false;
             Hal::statusRunning();
             break;
 
@@ -222,7 +230,11 @@ void Display::update(InterpState state, bool c2Running, int clients)
         case INTERP_STOPPED:
             _completeSince = 0;
             _errorShown = false;
-            Hal::ledBlink(255, 120, 0, 3, 150);
+            if (!_stoppedBlinked) {
+                _stoppedBlinked = true;
+                Hal::ledBlink(255, 120, 0, 3, 150);
+                Hal::ledSet(255, 120, 0);   // hold steady amber afterwards
+            }
             break;
         }
     }
