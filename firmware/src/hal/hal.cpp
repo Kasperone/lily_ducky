@@ -363,11 +363,16 @@ bool Hal::mscActive() { return false; }
 #endif
 
 // ─── LED (APA102, BGR colour order) ─────────────────────────────────────────
+// Global brightness for the APA102 5-bit current register. LilyGO's factory
+// firmware uses 10 (of 31) to avoid blinding output on the 2020-package LED;
+// 0 blanks the LED entirely regardless of RGB (the frame header is
+// 111bbbbb — an earlier version shipped bbbbb=00000, killing all feedback).
+#define HAL_APA102_BRIGHTNESS 10
+
 static void sendAPA102(uint8_t r, uint8_t g, uint8_t b) {
     // APA102: start frame, LED frame, end frame
     // LED frame: 111bbbbb gggggggg rrrrrrrr bbbbbbbb
     //   bbbbb = global brightness (31 = full)
-
     // Start frame: 32 zero bits
     pinMode(PIN_LED_CLOCK, OUTPUT);
     pinMode(PIN_LED_DATA, OUTPUT);
@@ -379,7 +384,8 @@ static void sendAPA102(uint8_t r, uint8_t g, uint8_t b) {
     }
 
     // LED frame: header(0xE0 | brightness) + B + G + R
-    uint32_t frame = 0xE0000000UL | ((uint32_t)b << 16) | ((uint32_t)g << 8) | (uint32_t)r;
+    uint32_t frame = (0xE0UL | HAL_APA102_BRIGHTNESS) << 24
+                   | ((uint32_t)b << 16) | ((uint32_t)g << 8) | (uint32_t)r;
     for (int i = 31; i >= 0; i--) {
         digitalWrite(PIN_LED_DATA, (frame >> i) & 1);
         digitalWrite(PIN_LED_CLOCK, HIGH);
@@ -387,10 +393,12 @@ static void sendAPA102(uint8_t r, uint8_t g, uint8_t b) {
     }
 
     // End frame: 32 one bits or at least (N/2) one bits
+    digitalWrite(PIN_LED_DATA, HIGH);
     for (int i = 0; i < 32; i++) {
         digitalWrite(PIN_LED_CLOCK, HIGH);
         digitalWrite(PIN_LED_CLOCK, LOW);
     }
+    digitalWrite(PIN_LED_DATA, LOW);
 }
 
 // Cache last-sent colour so the bit-banged APA102 send doesn't re-toggle
