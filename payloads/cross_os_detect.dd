@@ -1,7 +1,12 @@
 REM Cross-platform router with OS detection (DuckyScript 3.0)
 REM Detects the OS and branches accordingly
+REM
+REM DETECT_OS runs a cooperative 3s window observing host keyboard-LED
+REM traffic and sets $_OS (WINDOWS=1, MACOS=2, LINUX=3, else 0).
 
 VAR $os_detected = 0
+
+DETECT_OS
 
 IF ($_OS == WINDOWS) THEN
     GUI r
