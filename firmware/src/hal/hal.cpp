@@ -375,10 +375,11 @@ bool Hal::mscActive() { return false; }
 
 // ─── LED (APA102, BGR colour order) ─────────────────────────────────────────
 // Global brightness for the APA102 5-bit current register. LilyGO's factory
-// firmware uses 10 (of 31) to avoid blinding output on the 2020-package LED;
-// 0 blanks the LED entirely regardless of RGB (the frame header is
-// 111bbbbb — an earlier version shipped bbbbb=00000, killing all feedback).
-#define HAL_APA102_BRIGHTNESS 10
+// demo used 10/31, but that is invisible against the white LCD backlight
+// bleeding through the transparent housing (verified on hardware: the LED
+// looked "solid white" while actually cycling dim colours). Full brightness
+// is needed for the status LED to read through the case.
+#define HAL_APA102_BRIGHTNESS 31
 
 static void sendAPA102(uint8_t r, uint8_t g, uint8_t b) {
     // APA102: start frame, LED frame, end frame
@@ -403,13 +404,15 @@ static void sendAPA102(uint8_t r, uint8_t g, uint8_t b) {
         digitalWrite(PIN_LED_CLOCK, LOW);
     }
 
-    // End frame: 32 one bits or at least (N/2) one bits
-    digitalWrite(PIN_LED_DATA, HIGH);
+    // End frame: the APA102 datasheet's 0xFF end frame misbehaves on this
+    // board's LED (a run of ones reads as white-bit garbage — verified on
+    // hardware: zeros end frame showed correct colours, ones end frame did
+    // not). Pololu's APA102 library ends with zero bits for the same reason.
+    digitalWrite(PIN_LED_DATA, LOW);
     for (int i = 0; i < 32; i++) {
         digitalWrite(PIN_LED_CLOCK, HIGH);
         digitalWrite(PIN_LED_CLOCK, LOW);
     }
-    digitalWrite(PIN_LED_DATA, LOW);
 }
 
 // Cache last-sent colour so the bit-banged APA102 send doesn't re-toggle

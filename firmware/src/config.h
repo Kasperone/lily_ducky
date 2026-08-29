@@ -67,6 +67,10 @@
 #define PIN_LCD_DC    3
 #define PIN_LCD_RST   1
 #define PIN_LCD_BL    0
+// Backlight level 0..255 (PWM). Full brightness washes the status LED out
+// to "white" through the transparent housing (verified on hardware); dimmed
+// keeps the LCD readable and the LED visible.
+#define CFG_LCD_BL_LEVEL 80
 
 #else // TARGET_DONGLE_S3
 
@@ -93,6 +97,7 @@
 #define PIN_LCD_DC    2
 #define PIN_LCD_RST   1
 #define PIN_LCD_BL    37   // backlight; LilyGO official; if your board is dark, try 38
+#define CFG_LCD_BL_LEVEL 255  // untested on hardware; full brightness until proven otherwise
 #endif
 
 // ──── LCD panel (identical on both boards)

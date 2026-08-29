@@ -128,10 +128,12 @@ static void lcdInit()
 {
     _tft.init();
     _tft.setRotation(3);                 // landscape, LilyGO factory orientation
-    pinMode(PIN_LCD_BL, OUTPUT);
-    // Polarity is target-specific (C5: active-LOW) — TFT_BACKLIGHT_ON carries
-    // the correct level per env in platformio.ini.
-    digitalWrite(PIN_LCD_BL, TFT_BACKLIGHT_ON);
+    // Backlight is active-LOW on the C5 and bright enough to wash the status
+    // LED out through the transparent housing; drive it with PWM so the LCD
+    // stays readable while the LED remains visible. TFT_BACKLIGHT_ON carries
+    // the on-level per target (C5: LOW).
+    analogWrite(PIN_LCD_BL,
+                TFT_BACKLIGHT_ON == LOW ? 255 - CFG_LCD_BL_LEVEL : CFG_LCD_BL_LEVEL);
     paintStaticFrame();
 }
 
