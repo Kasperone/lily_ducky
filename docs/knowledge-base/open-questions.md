@@ -500,3 +500,31 @@ that, it's a safety net under it. And: **any future edit to these two files
 must be checked for tokens/paths/secrets before committing**, the same way
 this pass was — tracking them means anything added from here on ships to
 GitHub, not just to this one machine.
+
+## 7. LED — two minor, non-blocking follow-ups (added 2026-08-30, after #1 was resolved)
+
+Neither of these blocks anything — the LED and LCD both work (see #1). They're
+recorded so a future session doesn't rediscover them from scratch.
+
+### 7a. Backlight vs. LED brightness tuning (per-unit, cosmetic)
+`CFG_LCD_BL_LEVEL` (config.h) is 180 and `HAL_APA102_BRIGHTNESS` (hal.cpp) is
+10 (the vendor's value). On the unit tested 2026-08-30 (MAC `F9:3C`) the LED
+read clearly as teal with the backlight on — no washout. But housings/diffusers
+vary between units, so if the LED ever looks *washed to white* against the
+backlight on a different board, the fix is one of: lower `CFG_LCD_BL_LEVEL`
+(dimmer LCD) or raise `HAL_APA102_BRIGHTNESS` (0–31; brighter LED). This is
+cosmetic tuning, not a bug — and note the *old* "backlight washes the LED
+white" claim was actually the pin bug (#1), so don't over-rotate on it.
+
+### 7b. `Hal::ledRefresh()` covers LCD paints but not SD reads
+On the C5 the APA102 shares the SPI bus (GPIO2/6), so any bus traffic clocks
+garbage through the CS-less LED. `Display::update()` calls `Hal::ledRefresh()`
+after an LCD paint to re-latch the colour, which covers the steady-state case
+(dashboard updates). It does **not** fire after SD reads/writes on the same bus
+(`Storage::` calls) — e.g. loading a payload after a button press briefly
+corrupts the LED until the next status change re-sends it. In practice this
+self-corrects within a loop iteration (the next `Display::update()` status call
+re-sends), so it's a sub-visible transient, not a stuck wrong colour. If it ever
+becomes visible: call `Hal::ledRefresh()` after `Storage::` bus operations too,
+or centralise all shared-bus access behind one wrapper that refreshes the LED on
+exit. Low priority; left as-is because the visible symptom is nil today.
