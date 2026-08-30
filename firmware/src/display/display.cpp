@@ -34,6 +34,10 @@
 // ─── LED state (unchanged from pre-LCD version) ───────────────────────────
 static unsigned long _completeSince = 0;
 static bool _errorShown = false;
+// STOPPED blinks amber once (3 pulses) then holds steady — ledBlink() blocks
+// ~900 ms, so without the one-shot guard every loop() tick would re-blink
+// and starve C2 + button handling while the state stays "stopped".
+static bool _stoppedBlinked = false;
 
 #if LCD_ENABLED
 
@@ -123,14 +127,22 @@ static void paintStaticFrame()
 static void lcdInit()
 {
     _tft.init();
-    _tft.setRotation(1);                 // landscape: USB connector right
-    pinMode(PIN_LCD_BL, OUTPUT);
-    digitalWrite(PIN_LCD_BL, HIGH);
+    _tft.setRotation(3);                 // landscape, LilyGO factory orientation
+    // Backlight is active-LOW on the C5, driven with PWM at CFG_LCD_BL_LEVEL.
+    // TFT_BACKLIGHT_ON carries the on-level per target (C5: LOW), so the duty
+    // is inverted for active-low. (The status LED sharing this SPI bus is
+    // unrelated to the backlight — see config.h CFG_LCD_BL_LEVEL.)
+    analogWrite(PIN_LCD_BL,
+                TFT_BACKLIGHT_ON == LOW ? 255 - CFG_LCD_BL_LEVEL : CFG_LCD_BL_LEVEL);
     paintStaticFrame();
 }
 
-static void lcdUpdate(InterpState s, bool c2Running, int clients)
+// Returns true if it actually painted anything to the LCD this call. The
+// caller uses that to re-latch the status LED (Hal::ledRefresh) — on the C5 the
+// LED shares this SPI bus, so any paint here clocks garbage through it.
+static bool lcdUpdate(InterpState s, bool c2Running, int clients)
 {
+    bool painted = false;
     // Snapshot dynamic fields. Zero-init so the firstPaint slot doesn't
     // pick up stack garbage when we copy cur → _last below.
     LcdState cur = {};
@@ -145,16 +157,19 @@ static void lcdUpdate(InterpState s, bool c2Running, int clients)
     if (_last.firstPaint ||
         strcmp(_last.ip, cur.ip) != 0) {
         writeField(ROW_IP, cur.ip, TFT_WHITE);
+        painted = true;
     }
     if (_last.firstPaint ||
         strcmp(_last.token, cur.token) != 0) {
         writeField(ROW_TOKEN, cur.token[0] ? cur.token : "(none)", TFT_YELLOW);
+        painted = true;
     }
     if (_last.firstPaint ||
         _last.clients != cur.clients) {
         char buf[8];
         snprintf(buf, sizeof(buf), "%d", cur.clients);
         writeField(ROW_CLIENTS, buf, cur.clients > 0 ? TFT_GREEN : TFT_WHITE);
+        painted = true;
     }
     if (_last.firstPaint ||
         _last.interp != cur.interp ||
@@ -168,10 +183,12 @@ static void lcdUpdate(InterpState s, bool c2Running, int clients)
         _tft.setTextColor(col, TFT_BLACK);
         _tft.setCursor(DOT_X - 22, ROW_TITLE);
         _tft.print(stateLabel(cur.interp));
+        painted = true;
     }
 
     _last = cur;
     _last.firstPaint = false;
+    return painted;
 }
 
 #endif // LCD_ENABLED
@@ -181,6 +198,7 @@ void Display::init()
     Hal::statusIdle();
     _completeSince = 0;
     _errorShown = false;
+    _stoppedBlinked = false;
 #if LCD_ENABLED
     lcdInit();
 #endif
@@ -202,6 +220,7 @@ void Display::update(InterpState state, bool c2Running, int clients)
             break;
 
         case INTERP_RUNNING:
+            _stoppedBlinked = false;
             Hal::statusRunning();
             break;
 
@@ -222,13 +241,20 @@ void Display::update(InterpState state, bool c2Running, int clients)
         case INTERP_STOPPED:
             _completeSince = 0;
             _errorShown = false;
-            Hal::ledBlink(255, 120, 0, 3, 150);
+            if (!_stoppedBlinked) {
+                _stoppedBlinked = true;
+                Hal::ledBlink(255, 120, 0, 3, 150);
+                Hal::ledSet(255, 120, 0);   // hold steady amber afterwards
+            }
             break;
         }
     }
 
     // ── LCD (only when enabled — diff-gated inside) ──────────────────────
 #if LCD_ENABLED
-    lcdUpdate(state, c2Running, clients);
+    bool painted = lcdUpdate(state, c2Running, clients);
+    // On the C5 the APA102 shares this SPI bus, so a paint just clocked garbage
+    // through the CS-less LED — re-latch the status colour. No-op elsewhere.
+    if (painted) Hal::ledRefresh();
 #endif
 }

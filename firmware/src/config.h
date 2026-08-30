@@ -28,10 +28,42 @@
 #define CFG_HAS_USB_HID  0
 #define CFG_BOARD_NAME   "T-Dongle-C5"
 #define CFG_MCU_NAME     "ESP32-C5"
+// ── Status LED pin assignment — RESOLVED on hardware 2026-08-30 ──────────────
+// The APA102 status LED is on GPIO2 (data) / GPIO6 (clock) — the SAME two pins
+// as the LCD/SD SPI bus (MOSI=2, SCK=6) — NOT GPIO4/5 as the vendor's own
+// pin_config.h (LED_DI=5, LED_CI=4) claims. The vendor pinout is WRONG for the
+// LED on this board. GPIO4/5 are the chip's JTAG MTCK/MTDO pads; driving them
+// never reaches the LED, which is why ~15 sessions of tests all saw a frozen
+// "solid white/amber/cyan" — that was the LED holding stale data left on the
+// shared bus, never responding. Proven with an on-hardware A/B pin test
+// (firmware/src/diag/led_pinmap_diag.cpp): colours cycle correctly when driven
+// on 2/6, stay frozen when driven on 5/4. This OVERTURNS the earlier "dead LED
+// / hardware fault" conclusion — the hardware was healthy the whole time; it
+// was a pin bug inherited from the vendor's pin_config.h.
+// Sources: github.com/zombodotcom/T-Dongle-C5 (community examples repo that
+// documents the 2/6 shared-bus wiring and the SPI-drive requirement) + the
+// on-hardware test. See docs/knowledge-base/open-questions.md #1 and
+// peripherals-apa102-led.md.
+//
+// Because the LED shares the LCD/SD SPI bus, it is driven over hardware SPI
+// (CFG_LED_SHARED_SPI, see hal.cpp), NOT bit-banged, and re-latched after any
+// LCD/SD bus traffic (Hal::ledRefresh) so the shared bus doesn't leave it
+// showing garbage.
+//
+// usb_jtag_bridge_en is now MOOT for the LED (the LED isn't on the JTAG pins
+// at all). Kept as a dead, 0 macro so the historical reasoning stays in one
+// place; do NOT set it — per usb_serial_jtag_struct.h conf0 bit 15 it forces
+// GPIO5 to input, and GPIO5 isn't the LED anyway. See open-questions.md #1.
+#define CFG_RELEASE_JTAG_LED_PINS 0
+#define CFG_LED_SHARED_SPI 1
 #else
 #define CFG_HAS_USB_HID  1
 #define CFG_BOARD_NAME   "T-Dongle-S3"
 #define CFG_MCU_NAME     "ESP32-S3"
+#define CFG_RELEASE_JTAG_LED_PINS 0
+// S3's APA102 is on its own dedicated pins (40/39), not the LCD bus — keep the
+// bit-bang driver path.
+#define CFG_LED_SHARED_SPI 0
 #endif
 
 // ── Hardware pin assignments ────────────────────────────────────────────────
@@ -39,9 +71,12 @@
 // Source: LilyGO T-Dongle-C5 factory firmware pin_config.h
 // LCD and SD share one SPI bus (distinct CS lines).
 
-// ──── RGB LED (APA102, colour order BGR)
-#define PIN_LED_DATA  5    // DI
-#define PIN_LED_CLOCK 4    // CI
+// ──── RGB LED (APA102, colour order BGR) — on the SHARED LCD/SD SPI bus,
+//      NOT the JTAG pads the vendor pin_config.h lists. data=MOSI=2,
+//      clock=SCK=6. Proven on hardware 2026-08-30; see the capability block
+//      above and docs/knowledge-base/open-questions.md #1.
+#define PIN_LED_DATA  2    // DI = PIN_LCD_MOSI (shared SPI bus)
+#define PIN_LED_CLOCK 6    // CI = PIN_LCD_SCK  (shared SPI bus)
 
 // ──── Button (BOOT key; holding at plug-in enters download mode)
 #define PIN_BUTTON    28   // active LOW
@@ -58,6 +93,14 @@
 #define PIN_LCD_DC    3
 #define PIN_LCD_RST   1
 #define PIN_LCD_BL    0
+// Backlight level 0..255 (PWM; active-low on the C5, converted in display.cpp).
+// Was forced to 0 (OFF) on the theory that backlight bleed washed the status
+// LED "white" through the housing — but that "white" was the pin bug (the LED
+// was on GPIO2/6 and never driven; see the LED block above and
+// open-questions.md #1), not backlight bleed. With the LED actually working,
+// the dashboard is restored. 180 is clearly readable; drop it if the LED reads
+// washed on your unit.
+#define CFG_LCD_BL_LEVEL 180
 
 #else // TARGET_DONGLE_S3
 
@@ -84,6 +127,7 @@
 #define PIN_LCD_DC    2
 #define PIN_LCD_RST   1
 #define PIN_LCD_BL    37   // backlight; LilyGO official; if your board is dark, try 38
+#define CFG_LCD_BL_LEVEL 255  // untested on hardware; full brightness until proven otherwise
 #endif
 
 // ──── LCD panel (identical on both boards)
@@ -158,5 +202,11 @@
 // Ignored on the C5: without USB HID there is nothing to type with.
 #define CFG_AUTO_FIRE_ON_PLUG   1
 #define CFG_ENUMERATION_DELAY_MS 2000  // give the host time to see the HID
+
+// How long setup() waits for the USB console host to connect before printing
+// the boot log (hardware-CDC targets only). Bytes printed before the host
+// enumerates are dropped — including the C2 auth token, which is otherwise
+// unrecoverable until the next reset. Timeout keeps a headless boot finite.
+#define CFG_SERIAL_CONNECT_WAIT_MS 8000
 
 #endif // LILY_DUCKY_CONFIG_H

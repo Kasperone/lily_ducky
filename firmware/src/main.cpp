@@ -120,6 +120,22 @@ void setup()
 {
     Serial.begin(115200);
     delay(500);
+
+#if ARDUINO_USB_MODE
+    // USB Serial/JTAG console (C5): bytes printed before the host enumerates
+    // are dropped — that loses the boot log and, critically, the C2 auth
+    // token, which cannot be recovered without another reset. Wait for the
+    // CDC link with a timeout so a headless boot still completes.
+    // (S3 uses TinyUSB native USB and must stay headless-fast for its
+    // payload auto-fire timing, so it skips the wait.)
+    {
+        uint32_t waitStart = millis();
+        while (!Serial && millis() - waitStart < CFG_SERIAL_CONNECT_WAIT_MS) {
+            delay(10);
+        }
+    }
+#endif
+
     Serial.println("\n[MAIN] LilyDucky v0.2 — " CFG_BOARD_NAME);
     Serial.println("       USB Rubber Ducky lab on " CFG_MCU_NAME);
 
