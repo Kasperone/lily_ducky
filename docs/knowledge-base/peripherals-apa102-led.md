@@ -10,9 +10,12 @@ Single APA102 (or SK9822-compatible clone) RGB LED, driven in
 >   `pin_config.h` claim of `LED_DI=5`/`LED_CI=4` (the JTAG pads) is **wrong**;
 >   driving 4/5 never reaches the LED. Because the LED shares the SPI bus, it
 >   is driven over the shared hardware `SPI` (`CFG_LED_SHARED_SPI`), not
->   bit-banged, and re-latched after any LCD/SD traffic (`Hal::ledRefresh()`)
->   since the CS-less APA102 also sees LCD/SD data on the bus. Sources: on-
->   hardware A/B pin test (`led_pinmap_diag.cpp`) + `zombodotcom/T-Dongle-C5`.
+>   bit-banged, and re-latched via `Hal::ledRefresh()` after each LCD paint
+>   (`Display::update()`) since the CS-less APA102 also sees LCD data on the
+>   bus. Note: SD reads/writes on the same bus are NOT yet followed by a
+>   refresh — a sub-visible transient that self-corrects on the next status
+>   update; see `open-questions.md` #7b. Sources: on-hardware A/B pin test
+>   (`led_pinmap_diag.cpp`) + `zombodotcom/T-Dongle-C5`.
 > - **T-Dongle-S3:** dedicated pins GPIO40 (data) / GPIO39 (clock), bit-banged
 >   (`CFG_LED_SHARED_SPI=0`). Not on the LCD bus. Unverified (no S3 hardware).
 
