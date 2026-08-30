@@ -70,7 +70,7 @@
 // Backlight level 0..255 (PWM). Full brightness washes the status LED out
 // to "white" through the transparent housing (verified on hardware); dimmed
 // keeps the LCD readable and the LED visible.
-#define CFG_LCD_BL_LEVEL 80
+#define CFG_LCD_BL_LEVEL 0     // D2 recipe: backlight OFF so LED is unambiguous
 
 #else // TARGET_DONGLE_S3
 

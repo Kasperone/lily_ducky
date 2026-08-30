@@ -379,7 +379,7 @@ bool Hal::mscActive() { return false; }
 // bleeding through the transparent housing (verified on hardware: the LED
 // looked "solid white" while actually cycling dim colours). Full brightness
 // is needed for the status LED to read through the case.
-#define HAL_APA102_BRIGHTNESS 31
+#define HAL_APA102_BRIGHTNESS 10    // D2 recipe: brightness 10 (visible without washout)
 
 static void sendAPA102(uint8_t r, uint8_t g, uint8_t b) {
     // APA102: start frame, LED frame, end frame
