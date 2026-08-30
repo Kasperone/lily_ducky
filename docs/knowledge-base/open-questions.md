@@ -402,32 +402,43 @@ label fix, safe for any agent to make in a docs-only commit. See
 `hardware-esp32-c5.md` for the full table and sources. **Fixed 2026-08-30** in
 `config.h` and `hal.cpp`'s comments.
 
-## 6. The most detailed hardware ground-truth lives in a gitignored, single-machine file
+## 6. RESOLVED 2026-08-30 — `.hermes/plans/*.md` is now tracked, sanitized
 
 **Where:** `.hermes/plans/2026-08-29_c5-hardware-dossier.md` and
-`.hermes/plans/2026-08-28_093918-tdongle-c5-bringup.md` — both under `.hermes/`,
-which `.gitignore` excludes entirely ("Agent state (local to each clone)").
+`.hermes/plans/2026-08-28_093918-tdongle-c5-bringup.md`.
 
-**Why this matters:** these two files are, by a wide margin, the best-sourced
+**Original problem:** these two files are, by a wide margin, the best-sourced
 hardware evidence in this entire project — a chronological table of every LED
 experiment with exact settings and observed results, the exact DTR/RTS reset
 gotcha, exact serial log lines, exact tokens and card sizes seen. Everything in
-`open-questions.md` #1 and the README/AGENTS.md status updates from 2026-08-30
-is downstream of these two files. But because `.hermes/` is gitignored, **this
-evidence does not travel with the repo** — a fresh clone, a different machine, a
-different agent session with no access to this specific filesystem, or simply
-this VM being rebuilt, all lose it permanently. The commit messages on
-`fix/c5-console-boot-race` capture a compressed version of the same findings and
-*do* travel with the repo, but the dossier has strictly more detail (the full
-chronological evidence table in particular has no equivalent anywhere in
-tracked files).
+this file's #1 and the README/AGENTS.md status updates from 2026-08-30 is
+downstream of these two files. But `.gitignore` excluded `.hermes/` entirely
+("Agent state (local to each clone)"), so this evidence never travelled with
+the repo — a fresh clone, a different machine, a different agent session
+with no filesystem access to this one, or the VM being rebuilt, all lost it
+permanently.
 
-**Recommendation:** decide deliberately whether `.hermes/plans/*.md` should stay
-gitignored-only. If the answer is "yes, agent scratch state shouldn't be
-tracked" (a reasonable default), then the discipline needs to be: **before a
-plan file like this is abandoned or superseded, promote its durable findings
-into a tracked doc** (this knowledge base, `AGENTS.md`, or a commit message) —
-don't let "write it to the plan file" substitute for "write it somewhere that
-survives." This pass promoted the 2026-08-30 snapshot; nothing currently
-guarantees the *next* bring-up session's findings will be promoted the same way
-before its own plan file is deleted or overwritten.
+**Resolution:** decided (2026-08-30, this session, on the repo owner's
+explicit instruction) to track `.hermes/plans/` specifically, while leaving
+the rest of `.hermes/` (sessions, cache, other per-clone state) gitignored —
+`.gitignore` now reads `.hermes/*` + `!.hermes/plans/`. Before tracking,
+both files were checked for secrets/credentials and sanitized: five live
+WiFi C2 auth tokens redacted (they regenerate every boot and were already
+stale by the time this was done, but `CONTRIBUTING.md` bans committing
+tokens on principle), and local-machine specifics genericized (home
+directory path revealing the username, a libvirt VM/hostdev filename, an
+SSH key filename). **Kept deliberately**: the physical unit's MAC address
+(`38:44:BE:BC:FA:C4`) — not a credential, and useful for the still-open gap
+noted in #1's addendum (whether later hardware sessions are testing the same
+physical board). No actual passwords or key material were found in either
+file; the WiFi password appearing in example commands (`quackquack`) is
+already the project's intentionally-public lab default.
+
+**Standing discipline, unchanged by this resolution:** promoting durable
+findings out of a plan file into this knowledge base (or `AGENTS.md`, or a
+commit message) before the plan file is superseded is still the rule per
+`agent-playbook.md` — tracking the plan files themselves doesn't replace
+that, it's a safety net under it. And: **any future edit to these two files
+must be checked for tokens/paths/secrets before committing**, the same way
+this pass was — tracking them means anything added from here on ships to
+GitHub, not just to this one machine.

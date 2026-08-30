@@ -10,8 +10,14 @@ firmware/build/
 .vscode/
 .idea/
 
-# Agent state (local to each clone — Hermes uses ~/.hermes for shared state)
-.hermes/
+# Agent state (local to each clone — Hermes uses ~/.hermes for shared state).
+# Exception: .hermes/plans/ — hardware bring-up dossiers, sanitized and
+# tracked deliberately (see docs/knowledge-base/open-questions.md #6) so the
+# most detailed hardware evidence this project has travels with the repo
+# instead of living only on one machine. Everything else under .hermes/
+# (sessions, cache, per-clone scratch) stays untracked.
+.hermes/*
+!.hermes/plans/
 .claude/
 
 # OS

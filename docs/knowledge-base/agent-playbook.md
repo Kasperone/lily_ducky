@@ -96,17 +96,30 @@ No physical board needed, low blast radius, fine to self-verify by compiling
 
 ## Standing rule: promote hardware findings out of `.hermes/plans/` every session
 
-The most detailed hardware ground-truth this project has ever produced lived in
-`.hermes/plans/*.md` — gitignored, local to one machine (`open-questions.md` #6).
-Confirmed with the repo owner on 2026-08-30: **this is a standing rule, not a
-one-off.** Before a hardware bring-up plan file is superseded, abandoned, or
-would otherwise stop being your active working file, promote its durable
-findings — verified-working subsystems, root-caused bugs, register/pin facts,
-anything another session would otherwise have to rediscover — into a tracked
-location: `docs/knowledge-base/`, `AGENTS.md`, `README.md`'s status table, or a
-commit message, as appropriate to what the finding is. "I wrote it in the plan
-file" does not count as done. This applies equally whether you're Hermes or
-Claude.
+The most detailed hardware ground-truth this project has ever produced lives in
+`.hermes/plans/*.md`. Confirmed with the repo owner on 2026-08-30: **this is a
+standing rule, not a one-off.** Before a hardware bring-up plan file is
+superseded, abandoned, or would otherwise stop being your active working
+file, promote its durable findings — verified-working subsystems, root-caused
+bugs, register/pin facts, anything another session would otherwise have to
+rediscover — into a tracked location: `docs/knowledge-base/`, `AGENTS.md`,
+`README.md`'s status table, or a commit message, as appropriate to what the
+finding is. "I wrote it in the plan file" does not count as done. This
+applies equally whether you're Hermes or Claude.
+
+**`.hermes/plans/` is tracked in git as of 2026-08-30** (`open-questions.md`
+#6) — the rest of `.hermes/` (sessions, cache, other per-clone state) is
+still gitignored. This means anything written into a plan file now ships to
+GitHub on the next commit, not just to one machine. **Before committing a
+change to a file under `.hermes/plans/`, check it for exactly what
+`CONTRIBUTING.md` already bans repo-wide: tokens (this project's WiFi C2 auth
+token is printed fresh every boot and is easy to paste into a plan file
+without thinking), secrets, and paths that reveal the local username or
+machine-specific infra (VM names, hostdev XML filenames, SSH key
+filenames).** A device's MAC address is fine to keep — it's not a
+credential, and it has genuine debugging value here (telling two physical
+units apart, see `open-questions.md` #1). When in doubt on anything else,
+redact and generalize rather than ask.
 
 ## Git conventions
 
