@@ -59,18 +59,28 @@ pin 13=MTCK/GPIO4, pin 15=MTDO/GPIO5) and the ESP-IDF "Configure Other JTAG
 Interfaces" guide for esp32c5, which independently gives the same GPIO2–5 mapping.
 `VERIFIED (source)`, cross-checked against two independent Espressif documents.
 
-**T-Dongle-C5 wiring collision:** LilyGO put the APA102 status LED on GPIO4 (clock)
-and GPIO5 (data) — i.e. on MTCK and MTDO. Confirmed directly from the vendor's own
-firmware repo, `Xinyuan-LilyGO/T-Dongle-C5`, `include/pin_config.h`:
+**No wiring collision after all — the LED is NOT on the JTAG pins.** This
+section previously claimed LilyGO put the APA102 on GPIO4 (MTCK) / GPIO5
+(MTDO), citing the vendor's `include/pin_config.h`:
 
 ```c
-#define LED_CI_PIN 4
-#define LED_DI_PIN 5
+#define LED_CI_PIN 4   // <- WRONG for the LED on this board
+#define LED_DI_PIN 5   // <- WRONG for the LED on this board
 ```
 
-`AGENTS.md` currently calls these "MTCK/MTDI" — GPIO5 is MTDO, not MTDI. Minor
-naming error, doesn't change the pin numbers or the fix, but fix the label if you
-touch that section (see `open-questions.md` #5).
+**Those vendor defines are wrong** (or vestigial from another revision).
+Proven on hardware 2026-08-30 (`open-questions.md` #1): the APA102 is actually
+on **GPIO2 (data) / GPIO6 (clock)** — the LCD/SD SPI bus (MOSI=2, SCK=6) —
+confirmed by an A/B pin test (colours cycle on 2/6, frozen on 5/4) and by the
+community repo `github.com/zombodotcom/T-Dongle-C5`. Driving GPIO4/5 never
+reached the LED; the "solid white" of the whole earlier investigation was the
+LED sitting on stale data on the shared bus. So there is **no JTAG/LED pin
+collision** — GPIO4/5 (MTCK/MTDO) are free JTAG pads with nothing on them, and
+`usb_jtag_bridge_en` (below) is irrelevant to the LED. `config.h` now uses
+`PIN_LED_DATA=2`/`PIN_LED_CLOCK=6` with `CFG_LED_SHARED_SPI`. The MTDO-vs-MTDI
+label nit that used to be flagged here (`open-questions.md` #5) is moot for the
+LED, though the datasheet pad labels themselves (GPIO4=MTCK, GPIO5=MTDO) remain
+as stated in the table above.
 
 ### The `usb_jtag_bridge_en` register — direction question RESOLVED 2026-08-30; still no fix for this unit's LED
 

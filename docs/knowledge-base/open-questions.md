@@ -15,7 +15,65 @@ still short of calling it settled, for reasons the addendum states explicitly.
 evidence so whoever (Hermes, Claude, or the repo owner) picks this up next
 doesn't have to redo the research.
 
-## 1. LED — hardware fault is now the best-supported explanation, not yet fully settled; two prior "confirmed dead" claims were retracted — read the whole arc, including the 2026-08-30 addendum, before trusting any summary of it
+## 1. LED — RESOLVED 2026-08-30 (third pass): it was a PIN BUG, not dead hardware. The APA102 is on GPIO2/6 (the LCD SPI bus), NOT GPIO4/5. Fixed and verified on hardware.
+
+> **RESOLUTION (2026-08-30, live hardware, `/dev/ttyACM0`, board MAC
+> `38:44:BE:BC:F9:3C`).** The status LED works. It was never dead. The
+> APA102's data/clock are wired to **GPIO2 (data/MOSI) and GPIO6 (clock/SCK)
+> — the same pins as the LCD/SD SPI bus** — not GPIO4/5 (the chip's JTAG
+> MTCK/MTDO pads) as the vendor's own `pin_config.h` (`LED_DI=5`, `LED_CI=4`)
+> claims and as this whole investigation assumed. Every prior test drove 4/5,
+> which never reaches the LED; the "solid white/amber/cyan" everyone saw was
+> the LED holding **stale residual data left on the shared bus**, which is
+> also exactly why it read as "intermittent" (different leftover colours) and
+> why the vendor factory firmware showed "dim purple/pink with white
+> flashing" (the LED displaying live LCD SPI traffic as garbage).
+>
+> **How it was proven:** `firmware/src/diag/led_pinmap_diag.cpp` (envs
+> `T-Dongle-C5-pinmap-A` = GPIO2/6, `-pinmap-B` = GPIO5/4) drives an APA102
+> colour cycle on each candidate pin pair, LED-only. On hardware, user
+> watching: **Phase A (2/6) cycles red/green/blue/off/white correctly;
+> Phase B (5/4) stays frozen** on a static colour. Then the main firmware,
+> fixed to drive 2/6 over the shared SPI bus, showed a steady teal status LED
+> **and** the LCD dashboard simultaneously — both verified live.
+>
+> **The fix (committed, verified on hardware):**
+> - `config.h`: `PIN_LED_DATA=2`, `PIN_LED_CLOCK=6` (was 5/4); new
+>   `CFG_LED_SHARED_SPI` flag (1 on C5, 0 on S3).
+> - `hal.cpp`: `sendAPA102()` drives the LED over the global (shared) Arduino
+>   `SPI` on the C5 instead of bit-banging JTAG pins; new `Hal::ledRefresh()`
+>   re-latches the colour after LCD/SD bus traffic (the APA102 has no CS, so a
+>   paint clocks garbage through it).
+> - `display.cpp`: `lcdUpdate()` reports whether it painted; `Display::update()`
+>   calls `Hal::ledRefresh()` after a paint.
+> - `config.h`: LCD backlight restored (`CFG_LCD_BL_LEVEL` 0 → 180) — the
+>   "backlight washes the LED white" theory was this same pin bug.
+> - `usb_jtag_bridge_en`/`CFG_RELEASE_JTAG_LED_PINS`: now **moot** for the LED
+>   (it isn't on the JTAG pins at all). Left as a dead 0 macro. The register's
+>   documented direction (below) is still correct; it just never mattered here.
+>
+> **Primary source that cracked it:** `github.com/zombodotcom/T-Dongle-C5`, a
+> community examples repo, documents the 2/6 shared-bus wiring in raw code
+> (`Adafruit_DotStar rgbLed(1, 2, 6, ...)`) and a detailed README (the
+> `0x0001`-not-`0x0000`-background flicker quirk is the tell of real hardware
+> debugging). This **conflicts with the vendor `pin_config.h`** — the vendor
+> is wrong for the LED on this board. Lesson consistent with this file's
+> theme: the vendor is usually ground truth, but "usually" isn't "always,"
+> and a cheap A/B hardware test beats trusting either source when they
+> conflict. See `peripherals-apa102-led.md`, `hardware-esp32-c5.md`, and
+> `sources.md`.
+>
+> **Board-identity gap (previously open) also closed:** the attached unit's
+> factory MAC (USB iSerial) is `38:44:BE:BC:F9:3C`, a *different* physical
+> board than the `38:44:BE:BC:FA:C4` in the dossier §1 (same batch). So the
+> unit fixed here is not the one the earliest arc sections describe — but the
+> pin bug is a wiring fact of the board design, not a per-unit condition, so
+> it applies to all of them.
+>
+> Everything below this box is the pre-resolution historical arc, kept as the
+> record of how two "confirmed dead" conclusions were reached and retracted
+> before the actual (pin) cause was found. **It is superseded — do not act on
+> its "next steps."**
 
 **Where:** `firmware/src/hal/hal.cpp` (`Hal::init()`, `sendAPA102()`),
 `firmware/src/config.h` (`CFG_RELEASE_JTAG_LED_PINS`, `HAL_APA102_BRIGHTNESS`).

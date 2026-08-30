@@ -32,6 +32,13 @@ device's own manufacturer already ships and presumably already tested.
    presumably tested their own demo. If your fix requires a register write the
    vendor's own firmware doesn't make, that's a signal to double-check *why*
    before committing it, not proceed anyway because it compiles.
+   **But "prefer" is not "always trust":** on 2026-08-30 the vendor's own
+   `pin_config.h` turned out to be *wrong* about the LED pins (it says the
+   APA102 is on GPIO4/5; it's actually on GPIO2/6 — see `open-questions.md` #1),
+   and a *community* repo (`zombodotcom/T-Dongle-C5`) had it right. The tell
+   was that the vendor's own LED demo didn't produce clean colours on this
+   hardware. When the vendor source and observed behaviour disagree, a cheap
+   A/B hardware test beats picking whichever source you trust more.
 3. **When you fetch a GitHub issue for a technical claim, fetch the comments,
    not just the issue body.** A tool that renders a GitHub issue page as
    markdown often won't include dynamically-loaded comments. Use

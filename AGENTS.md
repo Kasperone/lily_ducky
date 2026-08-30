@@ -16,29 +16,22 @@ on hand) with T-Dongle-S3 kept as the full-HID reference target.** Both envs bui
 **The C5 has been flashed and boot-verified on real hardware**: boot log, SD card,
 LCD dashboard, and the BOOT button are all confirmed working on-device; the WiFi C2
 SoftAP/HTTP server starts (confirmed via serial) but its REST API hasn't been
-exercised end-to-end yet (needs a WiFi-joined client). The status LED remains
-non-functional on the currently-attached unit, and as of 2026-08-30 that's now
-the best-supported explanation rather than the leading guess — though still
-short of "settled," on purpose (two earlier "confirmed dead" conclusions in
-this same investigation were retracted; see why before repeating either
-mistake). A 2026-08-30 session tested a genuinely hardware-timed driver
-(hardware SPI — **not** RMT; that framing, previously in this file, was
-itself wrong, see below) with `usb_jtag_bridge_en` in both states, verified
-via verbose core logging that the SPI peripheral bound cleanly to the LED
-pins, and still got a solid, unresponsive white — including under a raw
-all-zero data stream a healthy LED cannot stay lit through. Separately, the
-`usb_jtag_bridge_en` register's full documented behavior was confirmed:
-setting it (this project's previous default) forces GPIO5 — the LED's data
-pin — into **input** direction, which is wrong regardless of this unit's
-condition; `CFG_RELEASE_JTAG_LED_PINS` is now `0`, verified on hardware not
-to regress SD/LCD/WiFi C2 boot. `docs/knowledge-base/open-questions.md` #1
-recommended trying "ESP-IDF's RMT-backed `led_strip` driver" next — **that
-was wrong**: Espressif's own `led_strip` docs say APA102/SK9822 use the
-component's SPI backend, not RMT (RMT is for single-wire protocols like
-WS2812). Read `open-questions.md` #1 in full, including its 2026-08-30
-addendum, before touching `sendAPA102()`, `usb_jtag_bridge_en`, or
-summarizing this any further. T-Dongle-S3 remains compile-verified only — no
-hardware acquired.
+exercised end-to-end yet (needs a WiFi-joined client). The status LED **works** — RESOLVED 2026-08-30 after ~15 sessions of a
+"dead LED" red herring. It was a **pin bug**: the APA102 is on **GPIO2 (data)
+/ GPIO6 (clock)** — the LCD/SD SPI bus — **not GPIO4/5** as the vendor's own
+`pin_config.h` claims. Every prior test drove 4/5 (the JTAG pads), which
+never reaches the LED; the "solid white/amber" everyone saw was the LED
+holding stale data on the shared bus. Proven with an A/B pin test on hardware
+(`firmware/src/diag/led_pinmap_diag.cpp`: colours cycle on 2/6, frozen on
+5/4) and fixed in the firmware (`CFG_LED_SHARED_SPI` — the LED is driven over
+the shared `SPI` bus and re-latched after LCD/SD traffic). Steady teal status
+LED + LCD dashboard both verified working simultaneously; LCD backlight
+restored (`CFG_LCD_BL_LEVEL` 180). `usb_jtag_bridge_en` /
+`CFG_RELEASE_JTAG_LED_PINS` are now moot for the LED and left dead-0. The
+source that cracked it: `github.com/zombodotcom/T-Dongle-C5`. Full trail:
+`docs/knowledge-base/open-questions.md` #1. T-Dongle-S3 remains
+compile-verified only — no hardware acquired (its LED is on dedicated pins
+40/39, bit-banged, unverified).
 Phase 4 security bypass features implemented (OS detect, layouts, VID/PID, jitter, exfil, ATTACKMODE) — S3 target only, unverified on hardware (no S3 board).
 
 ## ⚠️ The ESP32-C5 cannot be a USB keyboard
@@ -73,7 +66,10 @@ T-Dongle-S3 (USB-OTG) — or BLE HID, which both boards can do (BLE 5).
   API + `Storage::fs()` accessor.
 - **LCD**: ST7735 0.96" 80×160 IPS via SPI — TFT_eSPI, `LCD_ENABLED=1` in config.h.
   Landscape (160×80), shows LilyDucky title, SSID, IP, auth token, client count, status corner
-- **LED**: APA102, bit-banged in hal.cpp (no library) — C5: DI=5 CI=4; S3: DIN=40 CLK=39
+- **LED**: APA102 in hal.cpp (no library). C5: DI=2/CI=6 — on the SHARED LCD/SD
+  SPI bus (not 4/5; vendor pin_config.h is wrong — see open-questions.md #1),
+  driven over `SPI` (`CFG_LED_SHARED_SPI`) + re-latched after bus traffic.
+  S3: DIN=40 CLK=39, dedicated pins, bit-banged.
 - **Button**: C5: GPIO28 (BOOT); S3: GPIO0
 - **Board definitions**: vendored in `firmware/boards/` (Lilygo-T-Dongle-C5.json, dongles3.json)
 - **External libs**: `bodmer/TFT_eSPI` only (single dep; chosen over hand-rolled ST7735
@@ -86,7 +82,7 @@ T-Dongle-S3 (USB-OTG) — or BLE HID, which both boards can do (BLE 5).
 | LCD MISO / SD D0 | 7 | LCD CS | 10 |
 | LCD DC (RS) | 3 | LCD RST | 1 |
 | LCD BL | 0 | SD CS | 23 |
-| LED DI | 5 | LED CI | 4 |
+| LED DI (=LCD MOSI) | 2 | LED CI (=LCD SCK) | 6 |
 | BOOT button | 28 | USB D-/D+ (Serial/JTAG) | 13/14 |
 
 ## Security bypass features (DuckyScript commands)
@@ -124,8 +120,8 @@ T-Dongle-S3 (USB-OTG) — or BLE HID, which both boards can do (BLE 5).
   capability flag, no code forks/branches per board.
 
 ## Implementation roadmap (remaining)
-- **Next phase — build verification VM**: install PlatformIO there, build both envs,
-  flash the C5 (this machine only hosts the repo + GitHub pushes)
+- ~~Build verification VM~~ — done: PlatformIO is installed on the hardware VM;
+  both envs build green and the C5 flashes directly here.
 - Phase 2.5: Port interpreter to CircuitPython for RP2350-One fallback
 - Phase 3: BLE HID ("cableless ducky") — both boards have BLE 5, so it runs on either;
   it is the **C5's only keystroke-injection route** since the C5 has no USB HID
@@ -135,7 +131,15 @@ T-Dongle-S3 (USB-OTG) — or BLE HID, which both boards can do (BLE 5).
 - More keyboard layouts (FR, ES, IT, Nordic)
 - LCD: payload progress (PC/total), live OS/layout, current DuckyScript line
 
-## Build (runs on the build VM, not this machine)
+## Build (PlatformIO 6.1.19 is installed on the hardware VM — build + flash here)
+
+> The T-Dongle-C5 is USB-passthrough'd into this VM (`/dev/ttyACM0`,
+> `303a:1001`) and PlatformIO is installed (`~/.local/bin/pio`), so builds and
+> flashes both run here — there is no separate build-only machine. (An earlier
+> version of this file said "runs on the build VM, not this machine"; that's
+> obsolete for the current hardware VM. `esptool` ships inside PlatformIO's
+> toolchain; `idf.py`/standalone `esptool` are NOT installed, so native ESP-IDF
+> examples can't be flashed directly without setting up ESP-IDF.)
 ```bash
 cd firmware
 pio run --environment T-Dongle-C5            # board on hand (default env)

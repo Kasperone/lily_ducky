@@ -3,11 +3,13 @@
 > A DIY USB Rubber Ducky / BadUSB learning platform on the LILYGO T-Dongle family.
 > Built to understand **how** keystroke-injection attacks work — so you can defend against them.
 
-> ### 🔧 Status — hardware bring-up in progress (T-Dongle-C5)
+> ### 🔧 Status — hardware bring-up (T-Dongle-C5): all core subsystems working
 > Both targets build cleanly. The **T-Dongle-C5 has been flashed to a real board**
-> and most subsystems are confirmed working there; the status LED is the one open
-> problem. The **T-Dongle-S3 has no hardware yet** — everything for it is
-> compile-verified only, never run on a real board.
+> and every core subsystem — including the **status LED, now fixed** — is
+> confirmed working there. The one remaining gap is exercising the WiFi C2 REST
+> API end-to-end (needs a WiFi client; this VM has no WiFi adapter). The
+> **T-Dongle-S3 has no hardware yet** — everything for it is compile-verified
+> only, never run on a real board.
 >
 > | Subsystem (T-Dongle-C5) | Status |
 > |---|---|
@@ -18,7 +20,7 @@
 > | BOOT button | ✅ Press events confirmed on serial |
 > | WiFi C2 SoftAP + HTTP server | 🔶 SoftAP and server start confirmed via serial log; the full REST API (`PUT`/`GET`/`run`/`stop`) hasn't been exercised end-to-end yet — needs a WiFi-joined client, see `scripts/c2_api_test.sh` |
 > | Payload execution via C2 | 🔶 Implemented, not yet run on hardware — no payload has been uploaded/executed on the device yet; typing is an honest no-op on this target regardless (no USB-OTG) |
-> | Status LED (APA102) | ❌ **Non-responsive on the currently-attached unit. A hardware fault is now the best-supported explanation — not yet called settled, on purpose.** A 2026-08-30 session tested a genuinely hardware-timed driver (hardware SPI, verified correctly bound via verbose logging) with the JTAG-bridge register in both states, including a raw all-zero data stream a healthy LED can't stay lit through — still solid white throughout. Two earlier "confirmed dead" conclusions in this same investigation were retracted before this; see `open-questions.md` #1 (including its 2026-08-30 addendum) before trusting any shorter summary of this, including this one. |
+> | Status LED (APA102) | ✅ **Working — fixed 2026-08-30.** It was a pin bug, not dead hardware: the APA102 is on GPIO2/6 (the LCD SPI bus), **not** GPIO4/5 as the vendor `pin_config.h` claims. ~15 sessions drove the wrong pins (the JTAG pads), so the LED sat on stale bus data and read as "solid white." Proven with an A/B pin test on hardware and fixed (`CFG_LED_SHARED_SPI` — driven over the shared SPI bus). Steady teal status LED + LCD dashboard verified working together. See `open-questions.md` #1. |
 >
 > See [`docs/knowledge-base/open-questions.md`](docs/knowledge-base/open-questions.md)
 > for the full diagnostic trail behind the LED conclusion and other claims in this

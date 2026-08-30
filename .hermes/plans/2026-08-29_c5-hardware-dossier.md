@@ -14,6 +14,37 @@
 > `.hermes/plans/2026-08-28_093918-tdongle-c5-bringup.md` (phase history),
 > skill `esp32-arduino-build` (gotchas).
 
+## §0.0 RESOLVED — 2026-08-30, third session (Claude Code): LED was a PIN BUG
+
+**The LED works. It was never dead.** The whole "solid white / hardware fault"
+saga was a wrong pin assignment. The APA102 is on **GPIO2 (data) / GPIO6
+(clock)** — the LCD/SD SPI bus — **not GPIO4/5** (the JTAG MTCK/MTDO pads) as
+this dossier's §3, the vendor `pin_config.h`, and every session assumed.
+Driving 4/5 never reached the LED; the "white/amber/cyan" was the LED sitting
+on stale data left on the shared bus (which is why it looked "intermittent").
+
+- **Attached board this session: MAC `38:44:BE:BC:F9:3C`** (USB iSerial) — a
+  DIFFERENT physical unit than the `38:44:BE:BC:FA:C4` recorded in §1 (same
+  batch). The board-identity gap flagged in §0's last bullet is now closed.
+  The pin bug is a board-design fact, not per-unit, so it applies regardless.
+- **Proven:** `firmware/src/diag/led_pinmap_diag.cpp` (envs
+  `T-Dongle-C5-pinmap-A` = 2/6, `-pinmap-B` = 5/4) — colours cycle on 2/6,
+  frozen on 5/4, user watching live.
+- **Fixed & verified in main firmware:** `config.h` PIN_LED_DATA=2/CLOCK=6 +
+  `CFG_LED_SHARED_SPI`; `hal.cpp` drives the LED over the shared `SPI` bus +
+  `ledRefresh()` after LCD/SD traffic; `display.cpp` refreshes LED after each
+  paint; LCD backlight restored (`CFG_LCD_BL_LEVEL` 180 — the "washout" theory
+  was this same pin bug). Steady teal LED **and** LCD dashboard both confirmed
+  working simultaneously; boot (SD/WiFi C2) unaffected.
+- **Source that cracked it:** `github.com/zombodotcom/T-Dongle-C5` (community
+  examples repo documenting the 2/6 shared-bus wiring). Conflicts with the
+  vendor `pin_config.h`; the hardware A/B test settled it in the community
+  repo's favour.
+- Everything below (§0 onward) is the pre-resolution record. §3's
+  `usb_jtag_bridge_en` discussion and §4/§5's LED hypotheses are **superseded**
+  — the register was never relevant (the LED isn't on the JTAG pins). Canonical
+  write-up: `docs/knowledge-base/open-questions.md` #1.
+
 ## §0. Update — 2026-08-30, second session (Claude Code, not the session that
 wrote the rest of this file)
 

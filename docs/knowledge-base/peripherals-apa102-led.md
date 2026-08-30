@@ -1,8 +1,20 @@
 # APA102 status LED
 
-Single APA102 (or SK9822-compatible clone) RGB LED, bit-banged in
+Single APA102 (or SK9822-compatible clone) RGB LED, driven in
 `firmware/src/hal/hal.cpp` (`sendAPA102()`) — no library, per `AGENTS.md`'s
 "earn your abstractions" rule (a one-LED driver doesn't need FastLED).
+
+> **Pins — RESOLVED on hardware 2026-08-30 (`open-questions.md` #1).**
+> - **T-Dongle-C5:** the APA102 is on **GPIO2 (data) / GPIO6 (clock)** — the
+>   SAME pins as the LCD/SD SPI bus (MOSI=2, SCK=6). The vendor's
+>   `pin_config.h` claim of `LED_DI=5`/`LED_CI=4` (the JTAG pads) is **wrong**;
+>   driving 4/5 never reaches the LED. Because the LED shares the SPI bus, it
+>   is driven over the shared hardware `SPI` (`CFG_LED_SHARED_SPI`), not
+>   bit-banged, and re-latched after any LCD/SD traffic (`Hal::ledRefresh()`)
+>   since the CS-less APA102 also sees LCD/SD data on the bus. Sources: on-
+>   hardware A/B pin test (`led_pinmap_diag.cpp`) + `zombodotcom/T-Dongle-C5`.
+> - **T-Dongle-S3:** dedicated pins GPIO40 (data) / GPIO39 (clock), bit-banged
+>   (`CFG_LED_SHARED_SPI=0`). Not on the LCD bus. Unverified (no S3 hardware).
 
 ## Protocol basics
 
@@ -49,13 +61,14 @@ That confirms two things independently of this repo's own hardware debugging:
   is **active-low** — same polarity this repo's `platformio.ini`
   (`TFT_BACKLIGHT_ON=LOW`) and `display.cpp` now assume. `VERIFIED (source)`.
 
-What's *not* vendor-confirmed: this repo's current choice to run the backlight
-**fully off** (`CFG_LCD_BL_LEVEL 0` in `config.h`) to stop backlight bleed from
-washing out the LED through the housing. The vendor firmware runs LED and
-backlight simultaneously without apparently needing this — plausible
-explanations are a housing/diffuser difference between this unit and LilyGO's, or
-a difference in how much backlight PWM duty is actually being driven (see
-`open-questions.md` if you re-open this).
+Note on backlight: an earlier version of this repo forced the LCD backlight
+**fully off** (`CFG_LCD_BL_LEVEL 0`) on the theory that its bleed washed the
+LED "white" through the housing. That theory was **wrong** — the "white" was
+the pin bug (the LED was on GPIO2/6 and never driven; see above and
+`open-questions.md` #1), not backlight bleed. The vendor runs LED and backlight
+together because there is no conflict. Backlight is restored
+(`CFG_LCD_BL_LEVEL 180`); LED and dashboard both verified working
+simultaneously on hardware 2026-08-30.
 
 ## Brightness field encoding, for anyone hand-rolling the frame
 

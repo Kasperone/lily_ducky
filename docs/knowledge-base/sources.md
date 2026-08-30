@@ -27,7 +27,11 @@ something a full read caught.
   - `examples/Factory/Factory.ino` — backlight active-low init (`digitalWrite(PIN_LCD_BL, 0)`), LED brightness=10 via Pololu APA102 lib.
   - `examples/LED/led.ino` — standalone LED demo, same brightness=10 recipe, plain `pinMode`/Pololu lib with no JTAG register writes.
   - `lib/apa102-arduino/` — vendored Pololu APA102 Arduino library (upstream: [pololu/apa102-arduino](https://github.com/pololu/apa102-arduino)).
-- [LilyGO T-Dongle-C5 Quick Start wiki](https://wiki.lilygo.cc/products/t-dongle-series/t-dongle-c5/quick-start.html) — secondary reference; prefer the firmware repo's `pin_config.h` if they ever disagree.
+- [LilyGO T-Dongle-C5 Quick Start wiki](https://wiki.lilygo.cc/products/t-dongle-series/t-dongle-c5/quick-start.html) — secondary reference; prefer the firmware repo's `pin_config.h` if they ever disagree. **Caveat (2026-08-30):** the vendor `pin_config.h` is WRONG about the LED pins — it lists `LED_DI=5`/`LED_CI=4`, but the APA102 is actually on GPIO2/6 (the LCD SPI bus), proven on hardware. See `open-questions.md` #1. "Prefer the vendor" is a strong default, not an absolute.
+
+## LilyGO T-Dongle-C5 (community)
+
+- [`zombodotcom/T-Dongle-C5`](https://github.com/zombodotcom/T-Dongle-C5) — community PlatformIO examples repo for the C5. **The source that resolved the LED mystery** (`open-questions.md` #1): documents in raw code and a detailed README that the APA102 is on GPIO2 (DI/MOSI) / GPIO6 (CI/SCK) — shared with the LCD SPI bus — NOT GPIO4/5. `src/led_test/main.cpp` (`Adafruit_DotStar rgbLed(1, 2, 6, ...)`, LED-only bit-bang) and `src/led_display_cycle/main.cpp` (LED over `SPI.transfer()` alongside the display). Its README notes the `0x0001`-vs-`0x0000`-background APA102-start-frame flicker quirk — the kind of detail that only comes from real hardware debugging. Conflicts with the vendor `pin_config.h`; the on-hardware A/B pin test (`led_pinmap_diag.cpp`) confirmed the community repo is right.
 
 ## APA102 / SK9822 protocol
 
@@ -59,7 +63,13 @@ something a full read caught.
   bring-up plan and phase-by-phase execution log this dossier summarizes.
   Same untracked caveat applies.
 
-## Live hardware session, 2026-08-30 (this session — see `open-questions.md` #1)
+## Live hardware session, 2026-08-30 (see `open-questions.md` #1)
+
+> **SUPERSEDED 2026-08-30 (later same-day session).** The "confirmed hardware
+> fault" conclusion below was WRONG — it (like every test that day) drove
+> GPIO4/5, but the LED is on GPIO2/6 (the LCD SPI bus). The LED is healthy;
+> it was a pin bug. See `open-questions.md` #1's resolution box. The notes
+> below are kept only as the record of how the wrong conclusion was reached.
 
 With direct access to the attached T-Dongle-C5 (`/dev/ttyACM0`, `303a:1001`),
 resolved the LED question by testing rather than reading further sources:
