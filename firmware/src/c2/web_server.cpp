@@ -12,6 +12,12 @@
 // =============================================================================
 
 #include "web_server.h"
+#include <uri/UriBraces.h>  // {} path-arg matching — a bare String route is
+                            // matched LITERALLY (Uri::canHandle is _uri ==
+                            // requestUri), so "/api/payload/(.*)" only ever
+                            // matched that exact string; every real filename
+                            // 404'd. UriBraces("/api/payload/{}") captures the
+                            // segment into pathArg(0).
 #include <esp_system.h>  // esp_random() for token seed
 #include "../storage/storage.h"
 #include "../interpreter/interpreter.h"
@@ -414,9 +420,9 @@ bool C2Server::start()
     _server.on("/", HTTP_GET, handleRoot);
     _server.on("/api/status", HTTP_GET, handleStatus);
     _server.on("/api/payloads", HTTP_GET, handleListPayloads);
-    _server.on("/api/payload/(.*)", HTTP_GET, handleGetPayload);
-    _server.on("/api/payload/(.*)", HTTP_PUT, handlePutPayload);
-    _server.on("/api/run/(.*)", HTTP_POST, handleRunPayload);
+    _server.on(UriBraces("/api/payload/{}"), HTTP_GET, handleGetPayload);
+    _server.on(UriBraces("/api/payload/{}"), HTTP_PUT, handlePutPayload);
+    _server.on(UriBraces("/api/run/{}"), HTTP_POST, handleRunPayload);
     _server.on("/api/stop", HTTP_POST, handleStop);
     _server.onNotFound(handleNotFound);
 
