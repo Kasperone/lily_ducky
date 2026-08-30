@@ -89,8 +89,9 @@ citations live in that file's 2026-08-30 addendum; summary:
 
 Repo: `~/lily_ducky` (path redacted for sharing — this file is tracked in
 git as of 2026-08-30, see `docs/knowledge-base/open-questions.md` #6).
-Branch: `fix/c5-console-boot-race` (pushed to origin; **no PR opened yet** —
-no gh auth on this box; open via GitHub web UI when hardware is done).
+Branch: `fix/c5-console-boot-race` — **merged to `main`** 2026-08-30 via PR #4
+(LED pin-bug fix + knowledge-base updates) and PR #6 (LED follow-up docs). The
+LED question is resolved; see §0.0 at the top of this file.
 Device currently runs **LilyDucky v0.2** with D2-recipe LED settings
 (BL=0, br=10, zeros EF, bridge_en=1 — flashed 2026-08-30, superseded same day,
 see the 2026-08-30 update at the top of this file). Wi-Fi C2 token:
