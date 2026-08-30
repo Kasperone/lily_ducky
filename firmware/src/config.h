@@ -28,13 +28,21 @@
 #define CFG_HAS_USB_HID  0
 #define CFG_BOARD_NAME   "T-Dongle-C5"
 #define CFG_MCU_NAME     "ESP32-C5"
-// The board's APA102 is wired to the chip's MTCK/MTDI pads (GPIO4/5), which
-// double as the USB Serial/JTAG controller's JTAG pins. At power-on the JTAG
-// hardware owns those pads (TDI idles high with clock edges — exactly an
-// APA102 white-bit stream), so GPIO writes never reach the LED and it glows
-// hard white. Setting USB_SERIAL_JTAG.conf0.usb_jtag_bridge_en releases the
-// pads to the GPIO matrix (cost: OpenOCD-over-USB-JTAG on those pads, which
-// this board doesn't need — flashing/debugging still works over CDC/UART).
+// The board's APA102 is wired to the chip's MTCK/MTDO pads (GPIO4/5 — clock/
+// data respectively; datasheet strapping table, not MTDI as this comment used
+// to say), which double as the USB Serial/JTAG controller's JTAG pins. At
+// power-on the JTAG hardware owns those pads (TDI idles high with clock edges
+// — exactly an APA102 white-bit stream), so GPIO writes never reach the LED
+// and it glows hard white. Setting USB_SERIAL_JTAG.conf0.usb_jtag_bridge_en
+// releases the pads to the GPIO matrix (cost: OpenOCD-over-USB-JTAG on those
+// pads, which this board doesn't need — flashing/debugging still works over
+// CDC/UART).
+// This board's LED is now a CONFIRMED DEAD/STUCK hardware fault (2026-08-30,
+// see docs/knowledge-base/open-questions.md #1) — two unrelated firmware
+// images, including LilyGO's own factory code which never sets this bit,
+// produced the same frozen output regardless of commanded colour, which no
+// firmware bug can cause. This bit's actual necessity/direction is therefore
+// unverifiable on this unit and left as-is; don't debug the LED further here.
 #define CFG_RELEASE_JTAG_LED_PINS 1
 #else
 #define CFG_HAS_USB_HID  1

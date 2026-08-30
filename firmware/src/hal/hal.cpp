@@ -68,9 +68,11 @@ void Hal::init() {
     pinMode(PIN_BUTTON, INPUT_PULLUP);
 
 #if CFG_RELEASE_JTAG_LED_PINS
-    // The APA102 sits on the MTCK/MTDI pads; until this bit is set the
+    // The APA102 sits on the MTCK/MTDO pads; until this bit is set the
     // USB-JTAG controller drives them (hard white LED, GPIO writes lost).
-    // Must happen before the first ledOff()/status colour. See config.h.
+    // Must happen before the first ledOff()/status colour. See config.h —
+    // this board's LED is now a confirmed dead/stuck hardware fault, so this
+    // line's actual necessity can't be tested on this unit; left as-is.
     USB_SERIAL_JTAG.conf0.usb_jtag_bridge_en = 1;
 #endif
 
