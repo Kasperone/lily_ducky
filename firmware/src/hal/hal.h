@@ -161,6 +161,11 @@ namespace Hal {
     // colour order is BGR; each channel 0–255
     void ledSet(uint8_t r, uint8_t g, uint8_t b);
     void ledOff();
+    // Re-latch the current LED colour. On boards where the APA102 shares the
+    // LCD/SD SPI bus (CFG_LED_SHARED_SPI, the C5), call after any LCD/SD bus
+    // activity to undo the garbage clocked through the CS-less LED. No-op on
+    // dedicated-pin boards (S3).
+    void ledRefresh();
     void ledBlink(uint8_t r, uint8_t g, uint8_t b, uint8_t count, uint16_t periodMs);
 
     // Status helpers — semantic colours (green=ok, red=err, cyan=WiFi, amber=idle)

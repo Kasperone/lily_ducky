@@ -10,6 +10,10 @@
 #include "hal.h"
 #include "storage/storage.h"
 
+#if CFG_LED_SHARED_SPI
+#include <SPI.h>   // APA102 shares the LCD/SD SPI bus on the C5 (GPIO2/6)
+#endif
+
 #if CFG_RELEASE_JTAG_LED_PINS
 #include <soc/usb_serial_jtag_struct.h>
 #endif
@@ -78,10 +82,21 @@ void Hal::init() {
     USB_SERIAL_JTAG.conf0.usb_jtag_bridge_en = 1;
 #endif
 
-    // LED: data and clock pins as outputs (APA102 is SPI-like, bit-banged)
+    // LED setup.
+#if CFG_LED_SHARED_SPI
+    // The APA102 hangs off the shared LCD/SD SPI bus (GPIO2=MOSI/data,
+    // GPIO6=SCK/clock). SPI.begin() is performed by Storage::init(), which
+    // runs after Hal::init() but before any status-LED call (Display::init()'s
+    // statusIdle()), so there is nothing to bit-bang or pinMode here — those
+    // pins are owned by the SPI peripheral. Sending the first frame now, before
+    // SPI.begin(), would do nothing, so the initial blank is deferred to the
+    // first Display status call. See config.h and open-questions.md #1.
+#else
+    // Dedicated LED pins (S3): bit-banged, so drive them as plain GPIO.
     pinMode(PIN_LED_DATA,  OUTPUT);
     pinMode(PIN_LED_CLOCK, OUTPUT);
     ledOff();
+#endif
 
 #if CFG_HAS_USB_HID
     // ── VID/PID Spoofing ──────────────────────────────────────────────────────
@@ -378,20 +393,37 @@ bool Hal::mscActive() { return false; }
 #endif
 
 // ─── LED (APA102, BGR colour order) ─────────────────────────────────────────
-// Global brightness for the APA102 5-bit current register. LilyGO's factory
-// demo used 10/31, but that is invisible against the white LCD backlight
-// bleeding through the transparent housing (verified on hardware: the LED
-// looked "solid white" while actually cycling dim colours). Full brightness
-// is needed for the status LED to read through the case.
-#define HAL_APA102_BRIGHTNESS 10    // D2 recipe: brightness 10 (visible without washout)
+// Global brightness for the APA102 5-bit current register (0..31). 10 is
+// LilyGO's own factory-firmware value (examples/LED/led.ino,
+// examples/Factory/Factory.ino), and it reads clearly on hardware. (An older
+// comment here claimed 10 was "invisible against the white LCD backlight" and
+// that full brightness was needed — that was a symptom of the pin bug, not the
+// brightness: the LED was on GPIO2/6 all along and simply wasn't being driven.
+// See config.h and docs/knowledge-base/open-questions.md #1.)
+#define HAL_APA102_BRIGHTNESS 10
 
 static void sendAPA102(uint8_t r, uint8_t g, uint8_t b) {
-    // APA102: start frame, LED frame, end frame
-    // LED frame: 111bbbbb gggggggg rrrrrrrr bbbbbbbb
-    //   bbbbb = global brightness (31 = full)
+    // APA102 frame: 4-byte zero start frame, one LED frame
+    // (0xE0|brightness, B, G, R), 4-byte zero end frame. Zeros for the end
+    // frame are the portable choice (genuine on real APA102, required on
+    // SK9822 clones) — see peripherals-apa102-led.md.
+#if CFG_LED_SHARED_SPI
+    // C5: the APA102 hangs off the shared LCD/SD SPI bus (GPIO2=data/MOSI,
+    // GPIO6=clock/SCK). SPI.begin() is owned by Storage::init(). The LCD (CS
+    // GPIO10) and SD (CS GPIO23) are idle-high here, and the APA102 has no CS,
+    // so only the LED latches this frame. Driven as one buffer over hardware
+    // SPI — no bit-bang, no CPU-loop jitter.
+    uint8_t buf[12] = {0};
+    buf[4] = 0xE0 | (HAL_APA102_BRIGHTNESS & 0x1F);
+    buf[5] = b;
+    buf[6] = g;
+    buf[7] = r;
+    SPI.beginTransaction(SPISettings(4000000, MSBFIRST, SPI_MODE0));
+    SPI.writeBytes(buf, sizeof(buf));
+    SPI.endTransaction();
+#else
+    // S3: dedicated LED pins, bit-banged.
     // Start frame: 32 zero bits
-    pinMode(PIN_LED_CLOCK, OUTPUT);
-    pinMode(PIN_LED_DATA, OUTPUT);
     digitalWrite(PIN_LED_CLOCK, LOW);
     digitalWrite(PIN_LED_DATA, LOW);
     for (int i = 0; i < 32; i++) {
@@ -408,15 +440,13 @@ static void sendAPA102(uint8_t r, uint8_t g, uint8_t b) {
         digitalWrite(PIN_LED_CLOCK, LOW);
     }
 
-    // End frame: the APA102 datasheet's 0xFF end frame misbehaves on this
-    // board's LED (a run of ones reads as white-bit garbage — verified on
-    // hardware: zeros end frame showed correct colours, ones end frame did
-    // not). Pololu's APA102 library ends with zero bits for the same reason.
+    // End frame: 32 zero bits (see note above)
     digitalWrite(PIN_LED_DATA, LOW);
     for (int i = 0; i < 32; i++) {
         digitalWrite(PIN_LED_CLOCK, HIGH);
         digitalWrite(PIN_LED_CLOCK, LOW);
     }
+#endif
 }
 
 // Cache last-sent colour so the bit-banged APA102 send doesn't re-toggle
@@ -431,6 +461,17 @@ void Hal::ledSet(uint8_t r, uint8_t g, uint8_t b) {
 
 void Hal::ledOff() {
     ledSet(0, 0, 0);
+}
+
+void Hal::ledRefresh() {
+#if CFG_LED_SHARED_SPI
+    // Re-latch the current colour after shared-bus (LCD/SD) traffic: because
+    // the APA102 has no chip-select, any LCD paint or SD access on GPIO2/6 also
+    // clocks through the LED and can leave it showing garbage. Call this right
+    // after LCD/SD activity to restore the intended status colour. Unlike
+    // ledSet(), this bypasses the change-cache and always re-sends.
+    sendAPA102(_lastR, _lastG, _lastB);
+#endif
 }
 
 void Hal::ledBlink(uint8_t r, uint8_t g, uint8_t b, uint8_t count, uint16_t periodMs) {
