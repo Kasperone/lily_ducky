@@ -19,6 +19,9 @@
 #include "storage/storage.h"
 #include "c2/web_server.h"
 #include "display/display.h"
+#if CFG_C2_SELFTEST
+#include "c2/c2_selftest.h"
+#endif
 
 // ── Globals ─────────────────────────────────────────────────────────────────
 static Interpreter interp;
@@ -172,6 +175,13 @@ void setup()
     Serial.print("[MAIN] WiFi C2... ");
     startWiFi();
     Hal::statusWiFi();
+
+#if CFG_C2_SELFTEST
+    // Loopback end-to-end test of the C2 REST API (own SoftAP IP, no external
+    // WiFi client). Spawns its own task; runs once, ~1.5 s after boot, while
+    // loop() below services the server. Off in the default build.
+    C2SelfTest::begin();
+#endif
 
     // 6. Fire default payload if configured (S3 only; C5 has no HID)
 #if CFG_AUTO_FIRE_ON_PLUG

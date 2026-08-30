@@ -15,8 +15,22 @@ Phase 1-2 code written (interpreter + C2 + HAL). **Ported to T-Dongle-C5 (hardwa
 on hand) with T-Dongle-S3 kept as the full-HID reference target.** Both envs build.
 **The C5 has been flashed and boot-verified on real hardware**: boot log, SD card,
 LCD dashboard, and the BOOT button are all confirmed working on-device; the WiFi C2
-SoftAP/HTTP server starts (confirmed via serial) but its REST API hasn't been
-exercised end-to-end yet (needs a WiFi-joined client). The status LED **works** — RESOLVED 2026-08-30 after ~15 sessions of a
+SoftAP/HTTP server starts and its **REST API is now verified end-to-end on
+hardware** (2026-08-30) — 12/12 checks via an on-device loopback self-test
+(`firmware/src/c2/c2_selftest.cpp`, env `T-Dongle-C5-selftest`, results over
+serial): status, authenticated payload PUT + GET round-trip, listing, 401 on
+missing token, run-to-completion, mid-run stop, and DETECT_OS cooperative pause
+with the C2 staying responsive (`$_OS=0` on the C5). That test **caught and
+fixed a real bug**: the parameterized routes were registered as bare strings
+(`"/api/payload/(.*)"`), which the Arduino `WebServer` matches *literally*
+(`Uri::canHandle` is `_uri == requestUri`), so every real filename 404'd —
+payload upload/run had never worked from any client. Fixed with
+`UriBraces("/api/payload/{}")` (see the gotcha below). Still pending: a true
+**over-the-air** pass with `scripts/c2_api_test.sh` from a WiFi-joined client —
+the build/flash VM has no WiFi radio, so it can't join the SoftAP; loopback
+covers the HTTP+handler+interpreter+SD path but not the radio/DHCP path. (Also
+noted: own-AP-IP loopback to 192.168.4.1 isn't routed on this lwIP build; the
+self-test reaches the server via 127.0.0.1 — a loopback detail, not a bug.) The status LED **works** — RESOLVED 2026-08-30 after ~15 sessions of a
 "dead LED" red herring. It was a **pin bug**: the APA102 is on **GPIO2 (data)
 / GPIO6 (clock)** — the LCD/SD SPI bus — **not GPIO4/5** as the vendor's own
 `pin_config.h` claims. Every prior test drove 4/5 (the JTAG pads), which
@@ -145,6 +159,8 @@ cd firmware
 pio run --environment T-Dongle-C5            # board on hand (default env)
 pio run --environment T-Dongle-S3            # full HID target
 pio run --environment T-Dongle-C5 --target upload
+# C2 REST API end-to-end self-test on hardware (no WiFi client needed):
+pio run -e T-Dongle-C5-selftest -t upload    # then capture serial for [PASS]/[FAIL]
 ```
 
 Platform note: platformio.ini uses the **pioarduino fork** release URL (55.03.311) —
@@ -170,6 +186,12 @@ C5 upload: hold BOOT (GPIO28) while plugging in if the port isn't detected.
 - **ESP32-C5 has NO USB-OTG** — never plan HID/MSC/VID-PID features for it; check
   `CFG_HAS_USB_HID` before writing USB-dependent code
 - BACKSPACE scancode is 0x2a, ESC is 0x29
+- **C2 routes with a path arg MUST use `UriBraces("/api/x/{}")`, never a bare
+  `"/api/x/(.*)"` string** — Arduino's `WebServer` matches a plain-String route
+  *literally* (`Uri::canHandle` is `_uri == requestUri`), so `(.*)` matched only
+  the literal text and every real filename 404'd. `{}` captures the segment into
+  `pathArg(0)` and forbids `/` (which `validName` already rejects). Regression-
+  guarded by the C2 loopback self-test (`env T-Dongle-C5-selftest`).
 - `_server` naming conflict with `WebServer` class — instance is `_server`
 - `WebServer::setInterpreter()` must be called after `Interpreter` construction
 - S3 SD card 1-bit mode needs INPUT_PULLUP on all 3 pins before `SD_MMC.begin()`

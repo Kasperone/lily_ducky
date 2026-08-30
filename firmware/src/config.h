@@ -143,6 +143,13 @@
 #define CFG_AP_IP           "192.168.4.1"
 #define CFG_HTTP_PORT       80
 
+// On-device end-to-end test of the C2 REST API over loopback (no external WiFi
+// client). Off by default; the T-Dongle-C5-selftest env sets it to 1. See
+// firmware/src/c2/c2_selftest.cpp. Guard with #ifndef so a -D build flag wins.
+#ifndef CFG_C2_SELFTEST
+#define CFG_C2_SELFTEST     0
+#endif
+
 // ── DuckyScript interpreter defaults ────────────────────────────────────────
 
 #define CFG_DEFAULT_DELAY     200     // ms between commands (pre-Duckyscript v2)
