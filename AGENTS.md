@@ -16,18 +16,29 @@ on hand) with T-Dongle-S3 kept as the full-HID reference target.** Both envs bui
 **The C5 has been flashed and boot-verified on real hardware**: boot log, SD card,
 LCD dashboard, and the BOOT button are all confirmed working on-device; the WiFi C2
 SoftAP/HTTP server starts (confirmed via serial) but its REST API hasn't been
-exercised end-to-end yet (needs a WiFi-joined client). The status LED is
-**unresolved and intermittent, tested on two units** — bit-banged drivers
-(ours and the vendor's own Arduino example) froze or showed wrong colours
-most of the time on both boards, but the identical code also worked at least
-once on the second, healthy-looking board, and a *non*-bit-banged vendor
-example worked reliably every time. Leading theory is a `digitalWrite`/SPI
-signal-integrity issue on this chip, not dead LED hardware — an earlier
-"confirmed dead hardware" conclusion in this same investigation was retracted
-once that showed up. Before touching `sendAPA102()` or `usb_jtag_bridge_en`,
-read `docs/knowledge-base/open-questions.md` #1 in full — it recommends
-trying ESP-IDF's RMT-backed `led_strip` driver next, not more bit-bang tuning.
-T-Dongle-S3 remains compile-verified only — no hardware acquired.
+exercised end-to-end yet (needs a WiFi-joined client). The status LED remains
+non-functional on the currently-attached unit, and as of 2026-08-30 that's now
+the best-supported explanation rather than the leading guess — though still
+short of "settled," on purpose (two earlier "confirmed dead" conclusions in
+this same investigation were retracted; see why before repeating either
+mistake). A 2026-08-30 session tested a genuinely hardware-timed driver
+(hardware SPI — **not** RMT; that framing, previously in this file, was
+itself wrong, see below) with `usb_jtag_bridge_en` in both states, verified
+via verbose core logging that the SPI peripheral bound cleanly to the LED
+pins, and still got a solid, unresponsive white — including under a raw
+all-zero data stream a healthy LED cannot stay lit through. Separately, the
+`usb_jtag_bridge_en` register's full documented behavior was confirmed:
+setting it (this project's previous default) forces GPIO5 — the LED's data
+pin — into **input** direction, which is wrong regardless of this unit's
+condition; `CFG_RELEASE_JTAG_LED_PINS` is now `0`, verified on hardware not
+to regress SD/LCD/WiFi C2 boot. `docs/knowledge-base/open-questions.md` #1
+recommended trying "ESP-IDF's RMT-backed `led_strip` driver" next — **that
+was wrong**: Espressif's own `led_strip` docs say APA102/SK9822 use the
+component's SPI backend, not RMT (RMT is for single-wire protocols like
+WS2812). Read `open-questions.md` #1 in full, including its 2026-08-30
+addendum, before touching `sendAPA102()`, `usb_jtag_bridge_en`, or
+summarizing this any further. T-Dongle-S3 remains compile-verified only — no
+hardware acquired.
 Phase 4 security bypass features implemented (OS detect, layouts, VID/PID, jitter, exfil, ATTACKMODE) — S3 target only, unverified on hardware (no S3 board).
 
 ## ⚠️ The ESP32-C5 cannot be a USB keyboard

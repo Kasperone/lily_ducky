@@ -72,44 +72,108 @@ firmware repo, `Xinyuan-LilyGO/T-Dongle-C5`, `include/pin_config.h`:
 naming error, doesn't change the pin numbers or the fix, but fix the label if you
 touch that section (see `open-questions.md` #5).
 
-### The `usb_jtag_bridge_en` register — background, now secondary to a confirmed hardware fault
+### The `usb_jtag_bridge_en` register — direction question RESOLVED 2026-08-30; still no fix for this unit's LED
 
 This is the register `firmware/src/hal/hal.cpp` sets to `1` at boot, believing
-it "releases" GPIO4/5 from JTAG so the LED can drive them. **The LED on this
-board's specific unit is now confirmed dead by direct hardware testing — see
-`open-questions.md` #1.** Two structurally unrelated firmware images (vendor
-factory code, and a from-scratch diagnostic sending one static frame per colour
-with nothing else running) both produced the same frozen, blended, unresponsive
-output — a signature no firmware bug can produce. The register-direction
-question below is still an interesting, unreconciled documentation puzzle, but
-it no longer has practical bearing on this board: whichever direction is
-"correct," the LED can't confirm or refute it while it's physically stuck. The
-primary-source facts, kept here for whoever eventually has a second unit to
-test on:
+it "releases" GPIO4/5 from JTAG so the LED can drive them. **That belief is
+wrong, confirmed by the register's own full documentation text, not just an
+inference — see below.** The LED's actual status is a longer story with two
+retracted "confirmed dead" conclusions already; full arc, including a
+2026-08-30 addendum that used a genuinely hardware-timed driver and both
+`bridge_en` states, is in `open-questions.md` #1 — read it before summarizing
+this any further.
 
-From `esp-idf`'s `components/soc/esp32c5/register/soc/usb_serial_jtag_struct.h`
-(`conf0` register, bit 15):
+Full register definition, from `esp-idf`'s
+`components/soc/esp32c5/register/soc/usb_serial_jtag_struct.h` (`conf0`
+union, bit 15 — re-fetched in full 2026-08-30; an earlier pass here quoted
+only an excerpt):
 
+```c
+/** usb_jtag_bridge_en : R/W; bitpos: [15]; default: 0;
+ *  Set this bit usb_jtag, the connection between usb_jtag and
+ *  internal JTAG is disconnected, and MTMS, MTDI, MTCK output
+ *  via GPIO Matrix, MTDO inputs via GPIO Matrix.
+ */
+uint32_t usb_jtag_bridge_en:1;
 ```
-usb_jtag_bridge_en : R/W; bitpos: [15]; default: 0;
-  Set this bit usb_jtag, the connection between usb_jtag and internal JTAG is
-  disconnected, and MTMS, MTDI, MTCK are output through GPIO Matrix, MTDO is
-  input through GPIO Matrix.
+
+Default is **0**. Read literally and completely: setting this bit to 1 makes
+MTMS/MTDI/MTCK (GPIO2/3/4) **outputs** and **MTDO (GPIO5) an input** — all
+via the GPIO matrix. GPIO5 is `PIN_LED_DATA` on this board. **Setting this
+bit therefore forces the LED's data pin into input direction** — no
+`pinMode`/`digitalWrite`/`SPIClass` call on our side can drive it as output
+while the bit is set, regardless of which driver generates the signal. This
+is the opposite of "releasing" the pins for LED use; it's routing the
+internal soft-JTAG-over-USB bridge *out* to physical GPIO2-5 so an
+**external** JTAG probe can be wired there (matching this register's own
+guide, "Configure Other JTAG Interfaces" — an external-probe bring-up
+feature). GPIO4 (MTCK/`PIN_LED_CLOCK`) stays an output either way, which is
+exactly why every bit-banged and SPI-based LED test that had this bit set
+showed a live, toggling clock with data that could never actually change —
+a clean mechanism, not a coincidence.
+
+**The C5's "Configure Other JTAG Interfaces" guide adds the other half of
+this**: JTAG is connected to the built-in USB_SERIAL_JTAG peripheral **by
+default**, and only bridged onto physical GPIO2-5 when explicitly asked for
+(this register bit, or burning the `DIS_USB_JTAG`/`JTAG_SEL_ENABLE` eFuses).
+GPIO2-5 are not inherently "claimed" by JTAG at reset the way this section
+used to assume — there was never anything to release.
+
+**Vendor evidence, now explained rather than just observed:** LilyGO's own
+factory firmware (`examples/Factory/Factory.ino`, `examples/LED/led.ino` in
+`Xinyuan-LilyGO/T-Dongle-C5`) drives GPIO4/5 with plain `pinMode(...,
+OUTPUT)` / `digitalWrite()` via the Pololu APA102 Arduino library — **no
+register poke at all**. That isn't a lucky omission; per the two sources
+above, GPIO4/5 are plain, fully usable GPIOs at the register's default (0),
+and touching `usb_jtag_bridge_en` at all is actively counterproductive for
+this use case.
+
+**Practical status:** `CFG_RELEASE_JTAG_LED_PINS` in `config.h` sets this bit
+and should be changed to not do so — flip it to 0 (or remove the register
+poke) the next time someone has hardware available to verify the change
+doesn't regress anything else. This was retested with the bit left
+untouched entirely on 2026-08-30 (see `open-questions.md` #1 addendum): the
+currently-attached unit's LED was still non-responsive, so this fix alone
+does not resolve the LED — but it is still correct to make, independent of
+that unit's condition, because the register direction is no longer in
+dispute.
+
+## SPI bus enum — only `FSPI` is valid on this chip, `HSPI` silently fails
+
+`VERIFIED (source)`, discovered 2026-08-30 debugging an LED diagnostic (see
+`open-questions.md` #1) — worth knowing for **any** future hardware-SPI code
+on the C5, not just the LED. Arduino-ESP32's `cores/esp32/esp32-hal-spi.h`
+defines the bus-select constants per chip family:
+
+```c
+// ESP32 (classic): FSPI=1, HSPI=2, VSPI=3 — three usable GP-SPI buses
+// ESP32C2, C3, C5, C6, C61, H2: FSPI=0 only — one GP-SPI peripheral (SPI2)
+// ESP32S2, S3, P4: FSPI=0, HSPI=1 — two GP-SPI peripherals (SPI2, SPI3)
 ```
 
-Default is **0**. The Espressif guide this register belongs to is titled
-"Configure Other JTAG Interfaces" and is about wiring an *external* JTAG probe to
-GPIO2–5 while still tunneling through the onboard USB port — a debug-bring-up
-feature, not a "give me my GPIOs back" feature. Setting the bit is documented as
-routing signals *through* the GPIO matrix *to* the pins for that external-probe
-case — the opposite of freeing them for LED use.
+`esp32-hal-spi.c` sizes its internal bus table with `SPI_COUNT`, confirmed
+against `esp32c5/include/soc/soc_caps.h`'s `SOC_SPI_PERIPH_NUM=2` (flash-
+shared SPI0/SPI1 plus one GP SPI2 — no SPI3) to be **1** on this chip.
+`spiStartBus()` bounds-checks the requested bus index against `SPI_COUNT` and
+returns `NULL` (no exception, no compile error) if it's out of range,
+logging only at a level `platformio.ini`'s `-DCORE_DEBUG_LEVEL=0` build flag
+suppresses by default. **`SPIClass(HSPI)` on a C5 (or C2/C3/C6/H2) passes an
+out-of-range bus index and silently no-ops** — indistinguishable from working
+code unless `CORE_DEBUG_LEVEL` is temporarily raised.
 
-**Vendor counter-evidence:** LilyGO's own factory firmware
-(`examples/Factory/Factory.ino`, `examples/LED/led.ino` in `Xinyuan-LilyGO/T-Dongle-C5`)
-drives GPIO4/5 with plain `pinMode(..., OUTPUT)` / `digitalWrite()` via the Pololu
-APA102 Arduino library — **no register poke at all** — and ships this as their
-default retail demo. That's strong evidence GPIO4/5 already work as plain GPIO with
-the register at its default (0).
+**The no-arg default constructor is not a safe fallback either** —
+`libraries/SPI/src/SPI.h`: `SPIClass(uint8_t spi_bus = HSPI);`. Since `HSPI`
+is `1` on this chip family (not `0`), a bare `SPIClass mySPI;` is exactly as
+broken as `SPIClass mySPI(HSPI);`. The framework's own global `SPI` singleton
+avoids this — `libraries/SPI/src/SPI.cpp` explicitly instantiates
+`SPIClass SPI(FSPI);` for this chip family (a separate `SPIClass
+SPI(VSPI);` line handles classic ESP32) rather than relying on the default
+parameter, which is why `Storage::init()`'s `SPI.begin(...)` (shared
+LCD/SD bus) has always worked fine — it was never exposed to this trap.
+**Always pass `FSPI` explicitly when constructing a second `SPIClass`
+instance on this chip family; never rely on the default constructor.** This
+is also why an earlier LED debugging attempt that used `SPIClass(HSPI)`
+looked like "SPI never sent anything" — see `open-questions.md` #1.
 
 ## Strapping pins
 

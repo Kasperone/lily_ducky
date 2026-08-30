@@ -48,5 +48,13 @@ first if you are an agent (Hermes or otherwise) about to work in this repo.
 | `PLAUSIBLE (unverified)` | Consistent with sources found, but no one has confirmed it against real hardware or the primary source directly. |
 | `DISPUTED` | Two sources conflict, or the reasoning behind a claim doesn't hold up under closer reading. See `open-questions.md`. |
 
-Last built: 2026-08-30, against branch `fix/c5-console-boot-race` (commit `b284e1b`) and
-merged PRs #1–#3.
+Built 2026-08-30 against branch `fix/c5-console-boot-race` (commit `b284e1b`) and
+merged PRs #1–#3. Extended same-day with a second, hardware-verified pass (new
+commits on the same branch) that corrected two claims from the first pass
+(the SPI-vs-RMT `led_strip` backend, and the `usb_jtag_bridge_en` register's
+actual documented direction) and added a live-hardware SPI diagnostic —
+`firmware/src/diag/led_spi_diag.cpp` and its `pio run -e T-Dongle-C5-leddiag*`
+build targets — reusable by anyone who has this board attached. See
+`open-questions.md` #1's 2026-08-30 addendum for the full trail; check
+`git log` for the current commit if this file is read from a later state of
+the branch.

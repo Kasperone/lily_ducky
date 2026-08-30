@@ -4,15 +4,18 @@ Things found while building this knowledge base (2026-08-30) where an existing
 commit message, code comment, or `AGENTS.md`/`README.md` line either didn't hold
 up against a primary source, or couldn't be told apart from an unverified guess.
 #3 and #5 were fixed directly (docs-only, low risk). #4 was fixed by rewriting
-the status banners once real hardware evidence was found. **#1 remains
-genuinely unresolved** — an earlier pass in this same session concluded "LED
-confirmed dead hardware," and that conclusion turned out to be premature once
-a second unit was tested; see #1 for the full arc, including the mistake, so
-it isn't repeated. #6 remains open as a process question for the repo owner.
-Each entry has the evidence so whoever (Hermes, Claude, or the repo owner)
-picks this up next doesn't have to redo the research.
+the status banners once real hardware evidence was found. **#1 has been
+through two "confirmed dead" → retracted cycles already** — read the full arc
+before trusting any summary of it, including this one; a same-day 2026-08-30
+addendum (a *second* research-and-test session, after the first arc below)
+used a genuinely hardware-timed driver, eliminated every confound the first
+arc found, and produced the strongest evidence yet for a hardware fault —
+still short of calling it settled, for reasons the addendum states explicitly.
+#6 remains open as a process question for the repo owner. Each entry has the
+evidence so whoever (Hermes, Claude, or the repo owner) picks this up next
+doesn't have to redo the research.
 
-## 1. LED — STILL UNRESOLVED as of 2026-08-30 end of session; earlier "confirmed dead hardware" conclusion was premature — read the whole arc before trusting any summary of it
+## 1. LED — hardware fault is now the best-supported explanation, not yet fully settled; two prior "confirmed dead" claims were retracted — read the whole arc, including the 2026-08-30 addendum, before trusting any summary of it
 
 **Where:** `firmware/src/hal/hal.cpp` (`Hal::init()`, `sendAPA102()`),
 `firmware/src/config.h` (`CFG_RELEASE_JTAG_LED_PINS`, `HAL_APA102_BRIGHTNESS`).
@@ -122,46 +125,206 @@ retracted — it was reached honestly, from real tests, but the tests all shared
 an untested assumption (that bit-banged `digitalWrite` output is a reliable
 enough signal source to draw conclusions from) that board 2 then falsified.
 
-**Recommended next steps, in order of cost:**
-1. Write and test a genuinely hardware-timed driver — ESP-IDF's `led_strip`
-   component (RMT-backed) is the standard, well-tested way to drive
-   addressable LEDs on ESP32 and was never actually tried here (only assumed
-   to be what the working vendor example used). If that's reliable across many
-   repeated runs on board 2, port `sendAPA102()` in `hal.cpp` to use it instead
-   of hand-rolled bit-banging, on both boards.
+**Recommended next steps, in order of cost — #1 done 2026-08-30, see the dated
+addendum below; #1's own "RMT-backed led_strip" framing was itself wrong and
+is corrected there too, read it before acting on this list:**
+1. ~~Write and test a genuinely hardware-timed driver~~ — done 2026-08-30,
+   see addendum. **Correction:** ESP-IDF's `led_strip` component does NOT use
+   RMT for APA102/SK9822 — its own docs state those chips use the component's
+   *SPI* backend; RMT is for single-wire timing-critical protocols
+   (WS2812/NeoPixel-style), which the two-wire clock+data APA102 is not.
+   "Hardware-timed" for this LED means hardware SPI, not RMT — tested
+   directly (not via the component, which would drag in an ESP-IDF managed
+   component into an Arduino/pioarduino build for one LED) in
+   `firmware/src/diag/led_spi_diag.cpp`.
 2. If a hardware-timed driver is also intermittent, suspect a genuine signal
    integrity issue (wire length/quality between MCU and LED, pull resistor
    values, decoupling) rather than firmware — that needs a logic analyzer or
-   oscilloscope, out of scope for a coding session.
+   oscilloscope, out of scope for a coding session. **Update:** the
+   2026-08-30 hardware-SPI test was NOT intermittent — clean, deterministic,
+   reproducible non-response every time, including under a raw all-zero
+   stream a healthy LED cannot stay lit through. That's a different (stronger)
+   result than this step anticipated; see the addendum for what it implies.
 3. Only once a driver is shown reliable across *many* repeated on/off/color
    cycles (not one lucky run) should any board's LED be declared working or
    dead, and only then does the `bridge_en` direction question become
-   testable again.
+   testable again. **Update:** the direction question is no longer
+   theoretical — the full register text (not just the excerpt originally
+   quoted) states plainly that `bridge_en=1` forces MTDO (GPIO5, this board's
+   LED **data** pin) into INPUT direction. Retested with the bit left at its
+   default (0, matching the vendor) 2026-08-30 — result unchanged. See
+   addendum.
 4. **Process lesson for next time, independent of the LED itself:** when a
    test result seems to cleanly confirm a hypothesis, spend one extra cheap
    test trying to break the result before writing it down as fact (step 9
    above is the template) — especially when the test itself introduces new,
    untested code (a new driver, a new library call) rather than only changing
-   the one variable under investigation.
+   the one variable under investigation. **Followed 2026-08-30**: the
+   hardware-SPI result was checked against a silent-init-failure explanation
+   (verbose core logging — the exact class of failure that explained the
+   earlier SPIClass(HSPI) attempt) before being trusted; see addendum.
+
+### Addendum, 2026-08-30 — hardware SPI tested, both `bridge_en` states tested, still non-responsive; this is the strongest evidence yet, still not being called "confirmed dead"
+
+Session with direct hardware access (`/dev/ttyACM0`, `303a:1001` attached —
+board identity not cross-checked against boot-log MAC against the board(s)
+tested in the prior arc above; treat this as "whichever unit is currently
+plugged in," not confirmed as board 1 or board 2).
+
+**What was fixed/corrected before testing, each independently sourced:**
+
+- **`SPIClass(HSPI)`'s silent failure (step 8/9 above) is now root-caused, not
+  just discarded as a confound.** `cores/esp32/esp32-hal-spi.h` in
+  arduino-esp32 defines, for the C2/C3/C5/C6/C61/H2 family (one
+  general-purpose SPI peripheral each): `FSPI=0`, `HSPI=1` — with `HSPI`'s
+  comment explicitly attributing it to "ESP32S2, S3, P4 - SPI 3 bus," chips
+  that have a *second* GP-SPI peripheral, which the C5 does not (confirmed
+  against `esp32c5/include/soc/soc_caps.h`: `SOC_SPI_PERIPH_NUM=2`, counting
+  the flash-shared SPI0/SPI1 plus one GP SPI2 — no SPI3). `esp32-hal-spi.c`
+  sizes its bus table with `SPI_COUNT`, which is **1** for this chip family;
+  `spiStartBus()` bounds-checks `spi_num >= SPI_COUNT` and returns `NULL` on
+  failure, logging at a level `platformio.ini`'s `CORE_DEBUG_LEVEL=0` build
+  flag suppresses by default. `SPIClass(HSPI)` on a C5 passes `spi_num=1`,
+  which is out of range — an invalid-argument bug, not a deeper signal
+  problem, and it explains why that step's result was indistinguishable from
+  "did nothing." **`FSPI` is the only valid bus on this chip.**
+- **The "RMT-backed led_strip" framing (this file's own step 1, `AGENTS.md`,
+  `config.h`) was wrong.** Espressif's `led_strip` component docs state
+  APA102/SK9822 use the component's SPI backend specifically; RMT backs
+  single-wire protocols. Corrected everywhere it was stated as fact.
+- **The `usb_jtag_bridge_en` register's full text** (previously only an
+  excerpt was quoted; refetched in full from
+  `usb_serial_jtag_struct.h`'s `conf0` union) confirms, verbatim: *"Set this
+  bit usb_jtag, the connection between usb_jtag and internal JTAG is
+  disconnected, and MTMS, MTDI, MTCK output via GPIO Matrix, MTDO inputs via
+  GPIO Matrix."* GPIO5 (MTDO) is `PIN_LED_DATA`. Setting this bit forces that
+  specific pin into **input** direction at the peripheral level — no amount
+  of `pinMode`/`digitalWrite`/`SPIClass` code on our side can drive it as
+  output while the bit is set. GPIO4 (MTCK/`PIN_LED_CLOCK`) stays an output
+  either way. That is a clean mechanism for "clock toggles, data can't" —
+  which reads on an APA102 as a fixed, data-independent output.
+- **The ESP32-C5's own "Configure Other JTAG Interfaces" guide** states JTAG
+  is connected to the built-in USB_SERIAL_JTAG peripheral **by default**, and
+  is only bridged onto physical GPIO2–5 when explicitly asked for (this
+  register bit, or burning the `DIS_USB_JTAG`/`JTAG_SEL_ENABLE` eFuses for an
+  external probe) — i.e. GPIO2–5 are not inherently "owned" by JTAG at reset
+  the way `config.h`'s original comment assumed; the vendor firmware's total
+  silence on this register isn't an oversight, it's correct, because there
+  was never anything to release.
+
+**Tests run, all on the currently-attached unit, all using real hardware SPI
+(`SPIClass(FSPI)`, confirmed correctly bound to GPIO4=SCK/GPIO5=MOSI via
+verbose `esp32-hal-periman` logging — `perimanSetPinBus(): Pin 4 ... SPI_MASTER_SCK`
+/ `Pin 5 ... SPI_MASTER_MOSI`, no errors, ruling out a repeat of the
+`SPIClass(HSPI)` silent-failure class of bug):**
+
+1. `bridge_en=1` (matches main firmware's current `CFG_RELEASE_JTAG_LED_PINS`):
+   proper APA102 frames (start frame, header+brightness+BGR, zero end frame),
+   cycling RED/GREEN/BLUE/OFF/AMBER, 4s holds. **Result: solid, unchanging
+   white**, independent of colour sent — including "OFF."
+2. `bridge_en` left untouched (default 0, matching the vendor exactly — the
+   register write skipped entirely, not just set to 0): identical test.
+   **Result: unchanged — solid white.** This empirically closes the
+   `bridge_en` direction question for practical purposes on this unit: even
+   the "correct per the datasheet, matches the vendor" state doesn't produce
+   working output, so whatever is wrong here isn't explained by that register
+   alone.
+3. Verbose (`CORE_DEBUG_LEVEL=5`) reflash of test 2 to positively rule out a
+   silent SPI init failure of the same class as the `HSPI` bug: peripheral
+   manager confirms clean, error-free binding of both pins to real SPI
+   hardware. **Result: unchanged — solid white**, now with high confidence
+   the MCU side is doing exactly what the code says.
+4. Falsification test: raw, non-APA102-framed, **continuous all-zero-byte
+   stream for 5 seconds** (1 MHz, well below anything that should stress
+   GPIO-matrix-routed signal integrity), then continuous all-`0xFF` for 5s,
+   then the normal colour cycle — all on the `bridge_en`-untouched,
+   verbose-confirmed config from test 3. A functioning APA102/SK9822 **cannot
+   stay lit through a sustained all-zero data stream** regardless of framing
+   convention; this removes framing/protocol/end-frame-choice as a variable
+   entirely. **Result: solid white throughout — including the 5s all-zero
+   phase.** User-observed directly, watching live, confirmed via chat.
+
+**What this rules out, with actual confidence:** bit-bang CPU-loop jitter (a
+correctly-bound hardware SPI peripheral was used); the `SPIClass(HSPI)`
+invalid-bus-index bug (root-caused and fixed, `FSPI` used and confirmed
+bound); silent SPI driver init failure (verbose logging showed a clean
+bind); `bridge_en` register direction as *the* explanation (tested with the
+bit both set and left at the vendor-matching default — same result either
+way); frame/protocol/end-frame choice (a raw all-zero stream bypasses all of
+that and still didn't turn the LED off).
+
+**What this does not, and cannot, rule out from a coding session:** whether
+the ESP32's pad is *physically* toggling at the LED's own pins (no scope/logic
+analyzer used — everything above is the SoC's own internal bookkeeping, not
+an external measurement); a cold solder joint or trace damage between the
+MCU and the LED package; damage to the LED die/driver itself; and — because
+this session never cross-checked the boot-log MAC against the two units
+described in the arc above — whether this is the same physical unit that
+earlier showed varied, genuinely intermittent bit-banged symptoms (amber,
+cyan, "nothing"), or the first unit that showed the *original* constant-white
+result. The signature here (solid, unvarying white, unresponsive to every
+tested driver/config/protocol combination) matches that first unit's
+original finding far more closely than the second unit's intermittency.
+
+**Where this leaves the "confirmed dead hardware" question, stated
+carefully because that framing was retracted once already in this same
+investigation:** this session's evidence is categorically stronger than
+either of the two prior "confirmed"/"retracted" passes, because it is the
+first to eliminate every confound identified in the earlier arc at once
+(bit-bang jitter, the SPI init bug, the register-direction question, framing
+choice) rather than trusting one clean-looking result. A hardware fault on
+this specific unit — LED die, driver chip, or a bad connection between the
+MCU and the LED — is now the best-supported explanation, better supported
+than at any earlier point in this file. It is still not being written down
+as flatly "confirmed," because the one thing that would make it so — an
+external electrical measurement at the LED's own pins, or successfully
+re-running the one driver that has ever worked in this whole investigation
+(the vendor's native ESP-IDF example, step 5 in the arc above) on this exact
+unit — was not done this session (no ESP-IDF/`idf.py` toolchain installed in
+this environment; standing one up from scratch was judged not worth it given
+how much software-side evidence already converges). Whoever picks this up
+next with either of those tools available can close this out for real; until
+then, treat "hardware fault, most likely permanent" as the leading,
+well-evidenced hypothesis for the currently-attached unit, not as settled
+fact.
 
 **What this means for the register-direction question (item originally under
-this heading):** still genuinely unresolved in the abstract — the D2 A/B result
-and the datasheet reading still don't reconcile — but it no longer matters for
-*this unit*: the LED can't be used as a signal either way while it's stuck. If
-a second T-Dongle-C5 is ever acquired, the D2 A/B test would be worth redoing
-there specifically to settle the register question independently of this
-unit's condition. Not a priority otherwise.
+this heading):** **resolved as of the 2026-08-30 addendum above** — the full
+register text is unambiguous (`bridge_en=1` forces MTDO/GPIO5/LED-data to
+input), and it was empirically retested with the bit left untouched (matching
+the vendor exactly): no change in outcome. `usb_jtag_bridge_en` should NOT be
+set for this LED's use case — `CFG_RELEASE_JTAG_LED_PINS` in `config.h` is
+based on a premise (JTAG owns these pins by default, needs releasing) that
+the C5's own "Configure Other JTAG Interfaces" guide contradicts (JTAG is
+only bridged onto GPIO2-5 when explicitly asked for). This no longer needs a
+second unit to settle — it's settled by the primary source plus one clean
+retest. What a second unit *would* still be useful for: confirming this
+finding generalizes (i.e. that a healthy C5's LED genuinely works with
+`bridge_en` left alone), since every test on the currently-attached unit has
+been LED-non-responsive regardless of this setting.
 
-**What this means for the project:** the status LED on this specific board can
-be treated as **dead**. Firmware LED logic (`Hal::ledSet`, `ledBlink`,
-`sendAPA102`) is implemented correctly per protocol and per the vendor's own
-recipe (brightness 10, zero end frame) — leave it as-is; it isn't the problem
-and would presumably work on a board with a healthy LED. Options going forward,
-for whoever owns this hardware decision: accept the LED as non-functional and
-rely on the LCD dashboard for status (it already shows the same information);
-attempt a rework/reflow of the APA102 package if equipment is available; or
-bodge an external APA102/LED to a spare GPIO. Not resolved here — hardware
-repair is outside what a coding session can do.
+**What this means for the project:** the status LED on the currently-attached
+board does not respond to any correctly-verified driver or configuration this
+session could produce — see the 2026-08-30 addendum for exactly what was and
+wasn't ruled out. **`usb_jtag_bridge_en` should be left unset** regardless of
+the LED's condition (it's wrong per the register's own documented behavior,
+independent of whether it happens to matter for a given unit) —
+`CFG_RELEASE_JTAG_LED_PINS` in `config.h` should be flipped to 0 the next time
+someone is touching this code with hardware available to verify the change,
+rather than left as a known-wrong default. Firmware LED logic (`Hal::ledSet`,
+`ledBlink`, `sendAPA102`) is implemented correctly per protocol and per the
+vendor's own recipe (brightness 10, zero end frame) — that part isn't the
+problem. Options going forward, for whoever owns this hardware decision:
+accept the LED as likely non-functional and rely on the LCD dashboard for
+status (it already shows the same information); attempt a rework/reflow of
+the APA102 package if equipment is available; bodge an external APA102/LED to
+a spare GPIO; or, cheapest next step for a future session, an electrical
+measurement (multimeter continuity from GPIO4/5 to the LED's pads; a logic
+analyzer or scope on the data line during a raw-stream test like the one
+above) or re-running the vendor's native ESP-IDF LED example on this exact
+unit (needs an ESP-IDF toolchain, not installed in this environment) — either
+would be genuinely conclusive in a way no further Arduino-side code change
+can be.
 
 ## 2. "Validated on real C5 hardware" (TFT_eSPI vendoring) is true, but not for the reason stated
 
