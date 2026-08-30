@@ -57,6 +57,22 @@ conclusion.
      stuck: most likely a damaged APA102 die or a broken trace/solder joint
      that isn't pressure-sensitive. It is **not** the `usb_jtag_bridge_en`
      question, and it is **not** a bug in this project's `sendAPA102()`.
+4. **Follow-up test, same session — ruled out a recoverable "stuck latch"
+   state too:** the tests above only ever soft-reset the ESP32 (RTS pulse);
+   USB VBUS stayed continuously applied throughout, so the APA102's own
+   internal shift register/latch was never actually power-cycled. Repeated the
+   static single-frame diagnostic a third time, this time across a genuine
+   **physical unplug/replug** of the whole board (confirmed by the user — not
+   just a VM/passthrough reconnect). If the fault were a corrupted internal
+   latch state in the APA102 rather than permanent damage, a real power cycle
+   should clear it. It didn't: user-observed **constant white, no colour
+   changes at all** through the same RED→GREEN→BLUE→OFF→AMBER sequence,
+   post-power-cycle. This rules out the one remaining "maybe it's a
+   recoverable state, not permanent damage" hypothesis. Three independent
+   conditions (vendor firmware, our diagnostic after a soft reset, our
+   diagnostic after a hard power cycle) all produced frozen/unresponsive
+   output — this is as conclusive as remote (no logic analyzer, no
+   continuity meter) diagnosis gets.
 
 **What this means for the register-direction question (item originally under
 this heading):** still genuinely unresolved in the abstract — the D2 A/B result

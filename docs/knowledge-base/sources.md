@@ -64,8 +64,15 @@ resolved the LED question by testing rather than reading further sources:
   this repo) sending one held colour (RED/GREEN/BLUE/OFF/AMBER, 3s each, one
   frame per colour, nothing else running) — user-observed no change at all
   across two runs, same blended appearance.
+- Repeated the same diagnostic a third time across a genuine physical
+  unplug/replug (user-confirmed, not just a VM/passthrough reconnect) to rule
+  out a recoverable stuck-latch state in the APA102 itself (soft resets alone
+  never drop USB VBUS, so the LED chip's own internal state was never actually
+  power-cycled before this). Result: still frozen — constant white, no colour
+  changes through the same sequence. Rules out "it's a recoverable state, not
+  permanent damage."
 - Restored the project's own firmware afterward; device confirmed booting
-  clean (SD, WiFi C2, SoftAP) post-restore.
+  clean (SD, WiFi C2, SoftAP) post-restore, each time it was reflashed.
 - Conclusion: confirmed hardware fault (dead/stuck LED or connection), not a
   firmware bug. Neither `/tmp/factory.bin` nor `/tmp/hwdiag` are part of this
   repo — they're session-local artifacts; the diagnostic source is reproducible
