@@ -2,12 +2,29 @@
 
 Research doc: `/home/kasperone/Documents/vault/Claude Code Research/DIY-Rubber-Ducky-BadUSB-Deep-Research.md`
 
+**Before touching hardware-facing code, read
+[`docs/knowledge-base/agent-playbook.md`](docs/knowledge-base/agent-playbook.md)
+and [`docs/knowledge-base/open-questions.md`](docs/knowledge-base/open-questions.md).**
+The gotchas below are the compressed facts; the knowledge base has the sourced
+evidence behind them and — importantly — flags a few claims in this very file
+that turned out to be imprecise or unverified when checked against a primary
+source (register headers, vendor firmware, the full text of cited issues).
+
 ## Status
 Phase 1-2 code written (interpreter + C2 + HAL). **Ported to T-Dongle-C5 (hardware
-on hand) with T-Dongle-S3 kept as the full-HID reference target.** Firmware has not
-been flashed to real hardware yet; build verification is planned for the next phase
-on a dedicated build VM (PlatformIO is not installed on this machine).
-Phase 4 security bypass features implemented (OS detect, layouts, VID/PID, jitter, exfil, ATTACKMODE) — S3 target only.
+on hand) with T-Dongle-S3 kept as the full-HID reference target.** Both envs build.
+**The C5 has been flashed and boot-verified on real hardware**: boot log, SD card,
+LCD dashboard, and the BOOT button are all confirmed working on-device; the WiFi C2
+SoftAP/HTTP server starts (confirmed via serial) but its REST API hasn't been
+exercised end-to-end yet (needs a WiFi-joined client). The status LED is a
+**confirmed dead/stuck hardware fault on this unit**, not a firmware bug — two
+unrelated firmware images (vendor factory code and a from-scratch static-frame
+diagnostic) both produced the same frozen, blended output regardless of commanded
+colour; don't spend further effort on `sendAPA102()` or `usb_jtag_bridge_en` for
+this symptom. See `docs/knowledge-base/open-questions.md` #1 and README's status
+table for the full diagnostic trail.
+T-Dongle-S3 remains compile-verified only — no hardware acquired.
+Phase 4 security bypass features implemented (OS detect, layouts, VID/PID, jitter, exfil, ATTACKMODE) — S3 target only, unverified on hardware (no S3 board).
 
 ## ⚠️ The ESP32-C5 cannot be a USB keyboard
 USB HID/MSC require a USB-OTG peripheral; in the ESP32 family only the S2/S3 have one.
@@ -17,9 +34,11 @@ Two independent reasons block it on the C5, either one sufficient:
    ESP-IDF `soc_caps.h` defines `SOC_USB_SERIAL_JTAG_SUPPORTED=1` with no
    `SOC_USB_OTG_SUPPORTED`. Arduino's `USBHIDKeyboard` is gated on that macro, so it
    compiles to nothing on the C5.
-2. **Software** — even under the reading that the C5 has latent OTG silicon
-   (esp-idf#18625, esp-usb#371), Espressif marked C5 TinyUSB device-mode "Won't Do":
-   no HID/MSC stack ships, so there is no path at the driver layer either.
+2. **Software** — even under the reading that the C5 has latent OTG silicon,
+   Espressif marked C5 TinyUSB device-mode "Won't Do" (esp-idf#18625): no HID/MSC
+   stack ships, so there is no path at the driver layer either. (esp-usb#371 is a
+   separate, narrower, *resolved* MSC build-error issue — don't cite it as a
+   second "won't do" data point; see docs/knowledge-base/open-questions.md #3.)
 Consequence: on the C5 build every HID function is an honest no-op; the device is a
 WiFi C2 lab node + interpreter/display/storage exerciser. Keystroke injection needs the
 T-Dongle-S3 (USB-OTG) — or BLE HID, which both boards can do (BLE 5).

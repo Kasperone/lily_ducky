@@ -3,11 +3,27 @@
 > A DIY USB Rubber Ducky / BadUSB learning platform on the LILYGO T-Dongle family.
 > Built to understand **how** keystroke-injection attacks work — so you can defend against them.
 
-> ### 🚧 Early stage — untested code
-> This project is at its **starting point**: the firmware has been written and
-> ported but **never compiled, flashed, or run on real hardware**. Expect build
-> errors and bugs. Treat everything here as a work-in-progress learning codebase,
-> not working software — and verify it all yourself before trusting it.
+> ### 🔧 Status — hardware bring-up in progress (T-Dongle-C5)
+> Both targets build cleanly. The **T-Dongle-C5 has been flashed to a real board**
+> and most subsystems are confirmed working there; the status LED is the one open
+> problem. The **T-Dongle-S3 has no hardware yet** — everything for it is
+> compile-verified only, never run on a real board.
+>
+> | Subsystem (T-Dongle-C5) | Status |
+> |---|---|
+> | Build + flash | ✅ Both envs build; flash succeeds; boot log captured over serial |
+> | Boot sequence / USB-CDC console | ✅ Boot-race fixed — C2 auth token now prints reliably every boot |
+> | SD card (SPI) | ✅ 32 GB card mounts, size reported correctly |
+> | LCD (ST7735 dashboard) | ✅ Panel, backlight, and dashboard fields (SSID/IP/token/clients/state) confirmed correct on-device |
+> | BOOT button | ✅ Press events confirmed on serial |
+> | WiFi C2 SoftAP + HTTP server | 🔶 SoftAP and server start confirmed via serial log; the full REST API (`PUT`/`GET`/`run`/`stop`) hasn't been exercised end-to-end yet — needs a WiFi-joined client, see `scripts/c2_api_test.sh` |
+> | Payload execution via C2 | 🔶 Implemented, not yet run on hardware — no payload has been uploaded/executed on the device yet; typing is an honest no-op on this target regardless (no USB-OTG) |
+> | Status LED (APA102) | ❌ **Confirmed hardware fault, not a firmware bug.** Two unrelated firmware images (vendor factory code, and a from-scratch test holding one static colour for 3s at a time with nothing else running) both produced the same frozen, blended purple/pink-and-white output regardless of the commanded colour. Firmware LED logic is implemented correctly; the LED itself (or its connection) is stuck. |
+>
+> See [`docs/knowledge-base/open-questions.md`](docs/knowledge-base/open-questions.md)
+> for the full diagnostic trail behind the LED conclusion and other claims in this
+> repo. Treat anything S3-specific as unverified (no hardware); everything else in
+> the table above has been directly observed working on the actual board.
 
 ---
 
@@ -168,6 +184,10 @@ Before you contribute, read:
 - **[CONTRIBUTING.md](CONTRIBUTING.md)** — git branch & commit conventions (agents welcome)
 - **[docs/programming-style.md](docs/programming-style.md)** — the code style we follow
 - **[AGENTS.md](AGENTS.md)** — architecture decisions & hardware gotchas for AI agents
+- **[docs/knowledge-base/](docs/knowledge-base/)** — sourced hardware reference (ESP32-C5
+  capabilities, APA102/LCD quirks, toolchain drift) plus a running list of hardware
+  claims elsewhere in this repo that turned out unverified or backwards on closer
+  inspection — read `agent-playbook.md` there before an agent touches hardware-facing code
 
 ## 📚 Further reading
 
