@@ -37,12 +37,14 @@
 // releases the pads to the GPIO matrix (cost: OpenOCD-over-USB-JTAG on those
 // pads, which this board doesn't need — flashing/debugging still works over
 // CDC/UART).
-// This board's LED is now a CONFIRMED DEAD/STUCK hardware fault (2026-08-30,
-// see docs/knowledge-base/open-questions.md #1) — two unrelated firmware
-// images, including LilyGO's own factory code which never sets this bit,
-// produced the same frozen output regardless of commanded colour, which no
-// firmware bug can cause. This bit's actual necessity/direction is therefore
-// unverifiable on this unit and left as-is; don't debug the LED further here.
+// LED status is UNRESOLVED, not a confirmed hardware fault — see
+// docs/knowledge-base/open-questions.md #1 before changing this line or
+// sendAPA102(). Bit-banged drivers (ours and LilyGO's own) froze or showed
+// wrong colours on two different boards most of the time, but intermittently
+// also worked — genuine intermittency, not a clean deterministic bug or a
+// clean dead LED. Leading theory is digitalWrite/SPI signal integrity on
+// this chip; next step is trying ESP-IDF's RMT-backed led_strip driver
+// before touching this bit again.
 #define CFG_RELEASE_JTAG_LED_PINS 1
 #else
 #define CFG_HAS_USB_HID  1

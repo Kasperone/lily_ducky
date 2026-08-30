@@ -16,13 +16,17 @@ on hand) with T-Dongle-S3 kept as the full-HID reference target.** Both envs bui
 **The C5 has been flashed and boot-verified on real hardware**: boot log, SD card,
 LCD dashboard, and the BOOT button are all confirmed working on-device; the WiFi C2
 SoftAP/HTTP server starts (confirmed via serial) but its REST API hasn't been
-exercised end-to-end yet (needs a WiFi-joined client). The status LED is a
-**confirmed dead/stuck hardware fault on this unit**, not a firmware bug — two
-unrelated firmware images (vendor factory code and a from-scratch static-frame
-diagnostic) both produced the same frozen, blended output regardless of commanded
-colour; don't spend further effort on `sendAPA102()` or `usb_jtag_bridge_en` for
-this symptom. See `docs/knowledge-base/open-questions.md` #1 and README's status
-table for the full diagnostic trail.
+exercised end-to-end yet (needs a WiFi-joined client). The status LED is
+**unresolved and intermittent, tested on two units** — bit-banged drivers
+(ours and the vendor's own Arduino example) froze or showed wrong colours
+most of the time on both boards, but the identical code also worked at least
+once on the second, healthy-looking board, and a *non*-bit-banged vendor
+example worked reliably every time. Leading theory is a `digitalWrite`/SPI
+signal-integrity issue on this chip, not dead LED hardware — an earlier
+"confirmed dead hardware" conclusion in this same investigation was retracted
+once that showed up. Before touching `sendAPA102()` or `usb_jtag_bridge_en`,
+read `docs/knowledge-base/open-questions.md` #1 in full — it recommends
+trying ESP-IDF's RMT-backed `led_strip` driver next, not more bit-bang tuning.
 T-Dongle-S3 remains compile-verified only — no hardware acquired.
 Phase 4 security bypass features implemented (OS detect, layouts, VID/PID, jitter, exfil, ATTACKMODE) — S3 target only, unverified on hardware (no S3 board).
 

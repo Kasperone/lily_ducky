@@ -4,75 +4,145 @@ Things found while building this knowledge base (2026-08-30) where an existing
 commit message, code comment, or `AGENTS.md`/`README.md` line either didn't hold
 up against a primary source, or couldn't be told apart from an unverified guess.
 #3 and #5 were fixed directly (docs-only, low risk). #4 was fixed by rewriting
-the status banners once real hardware evidence was found. #1 was fully resolved
-this session with live hardware access (see below — the LED is a confirmed
-hardware fault, not a firmware bug). #6 remains open as a process question for
-the repo owner. Each entry has the evidence so whoever (Hermes, Claude, or the
-repo owner) picks this up next doesn't have to redo the research.
+the status banners once real hardware evidence was found. **#1 remains
+genuinely unresolved** — an earlier pass in this same session concluded "LED
+confirmed dead hardware," and that conclusion turned out to be premature once
+a second unit was tested; see #1 for the full arc, including the mistake, so
+it isn't repeated. #6 remains open as a process question for the repo owner.
+Each entry has the evidence so whoever (Hermes, Claude, or the repo owner)
+picks this up next doesn't have to redo the research.
 
-## 1. LED — RESOLVED 2026-08-30: hardware fault, confirmed, not a firmware bug
+## 1. LED — STILL UNRESOLVED as of 2026-08-30 end of session; earlier "confirmed dead hardware" conclusion was premature — read the whole arc before trusting any summary of it
 
 **Where:** `firmware/src/hal/hal.cpp` (`Hal::init()`, `sendAPA102()`),
 `firmware/src/config.h` (`CFG_RELEASE_JTAG_LED_PINS`, `HAL_APA102_BRIGHTNESS`).
 
-This entry went through three states in one day. Recording the full arc because
-the *method* that settled it — a static single-frame diagnostic, isolating the
-signal from every other variable — is the reusable lesson, not just the
-conclusion.
+**Do not skip to a conclusion here — this entry was wrong once already, twice
+in one session, and both times because a genuinely clean-looking result was
+trusted before a cheap follow-up test would have caught the problem.** Recording
+the full arc, including the dead ends, because the two mistakes are the more
+valuable lesson than any single-board finding.
 
-1. **Originally (documentation-only pass):** argued `usb_jtag_bridge_en = 1`
-   was likely backwards, from reading the register header and the Espressif
-   JTAG-configuration guide, plus LilyGO's factory firmware never touching that
-   register.
-2. **Then, reading the local `.hermes/` dossier:** found a real on-device A/B
-   test (session "D2", 2026-08-29) where bridge_en=1 correlated with a working
-   colour cycle — genuine empirical evidence complicating the theoretical
-   reading, unresolved either way.
-3. **Then, live hardware access this session, definitively resolved:** with the
-   actual T-Dongle-C5 attached (`/dev/ttyACM0`, `303a:1001`), ran two decisive
-   tests instead of theorizing further:
-   - Reflashed **LilyGO's stock factory firmware** (`/tmp/factory.bin`, no
-     `bridge_en` write, Pololu library, continuous RGB cycle). User-observed:
-     dim purple/pink blend with occasional white flashing — never a clean,
-     distinct colour.
-   - Flashed a **from-scratch diagnostic** (`/tmp/hwdiag`, `bridge_en=1`, our
-     own zero-end-frame recipe) that sends exactly one static frame per colour
-     — RED held 3s, then GREEN held 3s, then BLUE, then OFF, then AMBER —
-     nothing else running (no WiFi/LCD/SD/loop). This isolates the signal
-     completely: if the LED receives each frame, the visible colour *must*
-     change every 3 seconds, because the firmware genuinely never repeats a
-     colour. User-observed, run twice: **no change at all** — "colors not
-     changing... it looks like a dimmed light and all of them look like they're
-     lit at once," matching the same purple/pink blend as the factory-firmware
-     run. A gentle press near the LED/PCB produced no change either (rules out
-     a simple flex-sensitive cracked joint specifically, though not a
-     non-flex-sensitive break).
-   - **Conclusion:** two structurally unrelated firmware images (vendor
-     library, from-scratch bit-bang) sending genuinely different, verified
-     (via serial log) commands over several seconds each, produced the exact
-     same frozen, blended, unresponsive output both times. Software cannot
-     cause that — every plausible firmware bug would still change *something*
-     about the wrong output as the commanded values change. This is the
-     signature of the LED (or its data/clock connection) being physically
-     stuck: most likely a damaged APA102 die or a broken trace/solder joint
-     that isn't pressure-sensitive. It is **not** the `usb_jtag_bridge_en`
-     question, and it is **not** a bug in this project's `sendAPA102()`.
-4. **Follow-up test, same session — ruled out a recoverable "stuck latch"
-   state too:** the tests above only ever soft-reset the ESP32 (RTS pulse);
-   USB VBUS stayed continuously applied throughout, so the APA102's own
-   internal shift register/latch was never actually power-cycled. Repeated the
-   static single-frame diagnostic a third time, this time across a genuine
-   **physical unplug/replug** of the whole board (confirmed by the user — not
-   just a VM/passthrough reconnect). If the fault were a corrupted internal
-   latch state in the APA102 rather than permanent damage, a real power cycle
-   should clear it. It didn't: user-observed **constant white, no colour
-   changes at all** through the same RED→GREEN→BLUE→OFF→AMBER sequence,
-   post-power-cycle. This rules out the one remaining "maybe it's a
-   recoverable state, not permanent damage" hypothesis. Three independent
-   conditions (vendor firmware, our diagnostic after a soft reset, our
-   diagnostic after a hard power cycle) all produced frozen/unresponsive
-   output — this is as conclusive as remote (no logic analyzer, no
-   continuity meter) diagnosis gets.
+### Board 1 (the original unit) — tests and the premature conclusion
+
+1. Reflashed **LilyGO's stock factory firmware** (`/tmp/factory.bin`, Arduino
+   framework, Pololu APA102 library — itself `digitalWrite`-based bit-banging,
+   not a hardware-timed driver). User-observed: dim purple/pink blend with
+   occasional white flashing — never a clean, distinct colour.
+2. Flashed a **from-scratch diagnostic** (`/tmp/hwdiag`, our own
+   `digitalWrite`-bit-banged recipe, `bridge_en=1`) sending one static frame
+   per colour (RED/GREEN/BLUE/OFF/AMBER, 3s each, nothing else running).
+   User-observed, twice: no change at all, same purple/pink-white blend. A
+   gentle press near the LED/PCB produced no change (rules out a
+   flex-sensitive cracked joint specifically).
+3. Repeated the same diagnostic across a genuine **physical unplug/replug**
+   (real power cycle, user-confirmed) to rule out a recoverable stuck-latch
+   state in the APA102 itself. Still frozen: constant white.
+4. **At this point the session concluded "confirmed hardware fault, not a
+   firmware bug" and closed this entry out.** That conclusion did not survive
+   contact with a second unit (below) — every test above used
+   `digitalWrite`-bit-banged drivers (ours and LilyGO's own Arduino example),
+   and board 2 showed that *this specific class of driver* can fail even on
+   confirmed-healthy hardware. Board 1's LED may or may not actually be
+   damaged — it was never tested with a hardware-timed driver (RMT/proper SPI)
+   the way board 2 eventually was, and by the time that gap was noticed, board
+   1 had already been swapped out. **This is unfinished, not disproven.**
+
+### Board 2 (a second, physically different unit — different MAC address, confirmed by boot log) — where it got more complicated, not less
+
+5. Booted whatever shipped on it: a **native ESP-IDF** example ("blink
+   addressable LED", not Arduino, distinct from the Pololu-library factory
+   image on board 1) — user-observed genuine "various colours changing"
+   correctly. This is evidence the vendor's own hardware-timed/RMT-style LED
+   driver works fine on healthy hardware, distinct from bit-banged approaches.
+6. Flashed our own diagnostic (`bridge_en=1`, bit-banged, RED/GREEN/BLUE/
+   OFF/AMBER, 3s each). User-observed: **stuck on amber the entire time** —
+   different frozen symptom than board 1's white, but still frozen.
+7. Same diagnostic with `bridge_en` left at default (0), matching what the
+   working vendor example implicitly relies on. User-observed: **nothing at
+   all** (no light) — a third distinct frozen symptom.
+8. Hypothesis at this point: maybe `bridge_en` itself is the active problem —
+   its documented behavior (routing the *internal* JTAG bridge's own signal
+   onto MTMS/MTDI/MTCK/MTDO via the GPIO matrix) could mean it overrides
+   whatever we try to drive on those pins with something else entirely,
+   independent of how we generate the signal. Tested this by switching from
+   `digitalWrite` bit-banging to **hardware SPI** (`SPIClass(HSPI)`,
+   `SPI.begin(sck=4, miso=-1, mosi=5, ss=-1)`) — a completely different signal
+   path with a fixed hardware clock, no CPU-loop jitter. Result with
+   `bridge_en=1`: **still stuck on amber, identical to the bit-banged result.**
+   This looked like strong confirmation that `bridge_en` overrides the pin
+   output regardless of source.
+9. **Second mistake, caught in time:** before trusting step 8, ran a direct
+   verification — set the LED to a known, distinctive colour (bright cyan)
+   via the *already-trusted* bit-bang method, held it, then immediately tried
+   to override it via the new SPI code with a different colour. **The LED
+   stayed cyan the whole time.** This proves the SPI code never actually
+   transmitted anything — `SPIClass(HSPI)` with `miso=-1` most likely never
+   initialized correctly on the ESP32-C5's single GPSPI2 peripheral (the
+   `HSPI`/`VSPI` bus naming is inherited from classic dual-SPI-controller
+   ESP32s and may not map cleanly here — not confirmed, just the leading
+   guess). **Every SPI-based result in step 8 was therefore an artifact —
+   stale cyan/amber carried over from whatever the previous bit-banged test
+   had last successfully written, not a real reading.** Discard step 8's
+   "SPI confirms bridge_en overrides everything" claim entirely.
+10. With the SPI confound identified, retested the **plain bit-bang cycle
+    again** (RED/GREEN/BLUE/OFF/AMBER, `bridge_en=1`, longer 4s holds, this
+    time properly synced with a "say go when watching" protocol to rule out
+    the observer missing early transitions). Result: **stuck again** — not
+    cycling. But step 5's cyan write, using the *identical* bit-bang code path
+    and `bridge_en=1`, had worked moments earlier in the SPI-verification test.
+
+### Where this actually leaves things
+
+The same exact bit-banged code, same board, same `bridge_en` setting,
+produced a correct result once (cyan, step 9's baseline) and a stuck result
+immediately after (step 10) — genuine **intermittency**, not a clean
+deterministic bug. That rules out a simple "this register direction is always
+wrong" or "this specific LED die is always dead" story — both would be
+reproducible every time, not hit-or-miss. Intermittency instead points toward
+something marginal: a signal-integrity issue (borderline timing, a weak
+connection that sometimes makes contact) that is sensitive to conditions not
+yet identified (temperature, exact CPU load/interrupt timing during the
+bit-bang loop, which specific pin transition sequence preceded it, etc.).
+
+**What we can say with actual confidence:**
+- Two boards, two different Arduino-framework Pololu/bit-bang firmwares, both
+  showed frozen/wrong LED output at least some of the time.
+- One board's non-Arduino, hardware-timed vendor example worked correctly
+  every time it was watched.
+- `bridge_en`'s effect could not be cleanly isolated — the one test that
+  seemed to isolate it (step 8) was invalidated by a tooling bug (step 9), and
+  a clean bit-bang-only re-test (step 10) then contradicted step 5's own
+  bit-bang result on the same board/setting.
+
+**What we cannot say:** that either board's LED is definitively dead, that
+`bridge_en`'s direction is settled, or that the intermittency has a known
+cause. The original "confirmed hardware fault" framing for board 1 is
+retracted — it was reached honestly, from real tests, but the tests all shared
+an untested assumption (that bit-banged `digitalWrite` output is a reliable
+enough signal source to draw conclusions from) that board 2 then falsified.
+
+**Recommended next steps, in order of cost:**
+1. Write and test a genuinely hardware-timed driver — ESP-IDF's `led_strip`
+   component (RMT-backed) is the standard, well-tested way to drive
+   addressable LEDs on ESP32 and was never actually tried here (only assumed
+   to be what the working vendor example used). If that's reliable across many
+   repeated runs on board 2, port `sendAPA102()` in `hal.cpp` to use it instead
+   of hand-rolled bit-banging, on both boards.
+2. If a hardware-timed driver is also intermittent, suspect a genuine signal
+   integrity issue (wire length/quality between MCU and LED, pull resistor
+   values, decoupling) rather than firmware — that needs a logic analyzer or
+   oscilloscope, out of scope for a coding session.
+3. Only once a driver is shown reliable across *many* repeated on/off/color
+   cycles (not one lucky run) should any board's LED be declared working or
+   dead, and only then does the `bridge_en` direction question become
+   testable again.
+4. **Process lesson for next time, independent of the LED itself:** when a
+   test result seems to cleanly confirm a hypothesis, spend one extra cheap
+   test trying to break the result before writing it down as fact (step 9
+   above is the template) — especially when the test itself introduces new,
+   untested code (a new driver, a new library call) rather than only changing
+   the one variable under investigation.
 
 **What this means for the register-direction question (item originally under
 this heading):** still genuinely unresolved in the abstract — the D2 A/B result

@@ -18,7 +18,7 @@
 > | BOOT button | ✅ Press events confirmed on serial |
 > | WiFi C2 SoftAP + HTTP server | 🔶 SoftAP and server start confirmed via serial log; the full REST API (`PUT`/`GET`/`run`/`stop`) hasn't been exercised end-to-end yet — needs a WiFi-joined client, see `scripts/c2_api_test.sh` |
 > | Payload execution via C2 | 🔶 Implemented, not yet run on hardware — no payload has been uploaded/executed on the device yet; typing is an honest no-op on this target regardless (no USB-OTG) |
-> | Status LED (APA102) | ❌ **Confirmed hardware fault, not a firmware bug.** Two unrelated firmware images (vendor factory code, and a from-scratch test holding one static colour for 3s at a time with nothing else running) both produced the same frozen, blended purple/pink-and-white output regardless of the commanded colour. Firmware LED logic is implemented correctly; the LED itself (or its connection) is stuck. |
+> | Status LED (APA102) | ❌ **Unresolved, actively investigated — not a clean firmware bug or a clean hardware fault.** Two units tested: bit-banged drivers (ours and the vendor's) froze or showed wrong colours on both, but the same code intermittently also worked at least once on the healthy-looking unit — and a vendor's non-bit-banged (hardware-timed) example worked reliably. Leading theory: bit-banged `digitalWrite`/SPI signal integrity on this chip, not dead hardware. See `open-questions.md` #1 before trusting any shorter summary of this, including this one. |
 >
 > See [`docs/knowledge-base/open-questions.md`](docs/knowledge-base/open-questions.md)
 > for the full diagnostic trail behind the LED conclusion and other claims in this
