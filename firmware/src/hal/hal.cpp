@@ -68,12 +68,13 @@ void Hal::init() {
     pinMode(PIN_BUTTON, INPUT_PULLUP);
 
 #if CFG_RELEASE_JTAG_LED_PINS
-    // The APA102 sits on the MTCK/MTDO pads; until this bit is set the
-    // USB-JTAG controller drives them (hard white LED, GPIO writes lost).
-    // Must happen before the first ledOff()/status colour. See config.h and
-    // docs/knowledge-base/open-questions.md #1 — LED status is unresolved
-    // and intermittent across two units, not a confirmed dead LED; don't
-    // trust this line's necessity either way without re-reading that entry.
+    // Dead by default (CFG_RELEASE_JTAG_LED_PINS is 0) — kept only so the
+    // history stays attached to real code, not just a comment. This bit does
+    // NOT "release" the APA102's pads; per the register's full documented
+    // text, setting it forces MTDO/GPIO5/PIN_LED_DATA into INPUT direction,
+    // which is actively wrong for driving the LED. See config.h and
+    // docs/knowledge-base/open-questions.md #1 (2026-08-30 addendum) before
+    // ever setting CFG_RELEASE_JTAG_LED_PINS back to 1.
     USB_SERIAL_JTAG.conf0.usb_jtag_bridge_en = 1;
 #endif
 

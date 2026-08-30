@@ -30,22 +30,43 @@
 #define CFG_MCU_NAME     "ESP32-C5"
 // The board's APA102 is wired to the chip's MTCK/MTDO pads (GPIO4/5 — clock/
 // data respectively; datasheet strapping table, not MTDI as this comment used
-// to say), which double as the USB Serial/JTAG controller's JTAG pins. At
-// power-on the JTAG hardware owns those pads (TDI idles high with clock edges
-// — exactly an APA102 white-bit stream), so GPIO writes never reach the LED
-// and it glows hard white. Setting USB_SERIAL_JTAG.conf0.usb_jtag_bridge_en
-// releases the pads to the GPIO matrix (cost: OpenOCD-over-USB-JTAG on those
-// pads, which this board doesn't need — flashing/debugging still works over
-// CDC/UART).
-// LED status is UNRESOLVED, not a confirmed hardware fault — see
-// docs/knowledge-base/open-questions.md #1 before changing this line or
-// sendAPA102(). Bit-banged drivers (ours and LilyGO's own) froze or showed
-// wrong colours on two different boards most of the time, but intermittently
-// also worked — genuine intermittency, not a clean deterministic bug or a
-// clean dead LED. Leading theory is digitalWrite/SPI signal integrity on
-// this chip; next step is trying ESP-IDF's RMT-backed led_strip driver
-// before touching this bit again.
-#define CFG_RELEASE_JTAG_LED_PINS 1
+// to say), which double as the USB Serial/JTAG controller's JTAG pins.
+//
+// CORRECTED 2026-08-30 — this bit's effect was backwards from what this
+// comment used to claim, confirmed against the register's own full
+// documentation text (usb_serial_jtag_struct.h conf0, bit 15): setting it
+// makes MTMS/MTDI/MTCK GPIO2-4 outputs but makes **MTDO/GPIO5 an input** —
+// GPIO5 is PIN_LED_DATA. Setting this bit does not "release" the LED pins,
+// it forces the data pin specifically into a direction the LED driver can
+// never write to, regardless of digitalWrite/SPIClass/anything else. The
+// C5's own "Configure Other JTAG Interfaces" guide additionally confirms
+// JTAG is NOT wired to GPIO2-5 by default at all — it's only bridged there
+// when this bit (or an eFuse) explicitly asks for it — so there was never
+// anything to "release" in the first place. LilyGO's own factory firmware
+// never touches this register and drives GPIO4/5 as plain GPIO successfully.
+// This macro should be 0; it is still 1 only because flipping it needs a
+// hardware pass to verify nothing else regresses (see
+// docs/knowledge-base/open-questions.md #1, 2026-08-30 addendum, which
+// retested with the bit left untouched and confirms it made no difference
+// for this specific unit's LED — a separate, still-open hardware question).
+//
+// LED status: NOT resolved as a firmware bug, and NOT flatly "confirmed
+// dead" either — two earlier "confirmed dead" conclusions in this project
+// were retracted. A 2026-08-30 session used a genuinely hardware-timed
+// driver (SPIClass(FSPI) — NOT RMT; Espressif's own led_strip component
+// docs say APA102/SK9822 use the SPI backend, RMT is for single-wire
+// protocols) and, separately, both bridge_en states, and still got a
+// solid, unresponsive white — including under a raw all-zero data stream, a
+// healthy LED cannot show that. Read open-questions.md #1 in full — including
+// what that evidence does and doesn't prove — before changing this line or
+// sendAPA102() again.
+//
+// Flipped 0 2026-08-30: verified on hardware (both in the diag build and in
+// this actual main-firmware build — full boot sequence re-captured over
+// serial: SD mount, LCD init, WiFi C2 SoftAP start all unaffected) that not
+// setting this bit changes nothing else. Kept as a named macro rather than
+// deleted outright so the history/reasoning stays attached to one place.
+#define CFG_RELEASE_JTAG_LED_PINS 0
 #else
 #define CFG_HAS_USB_HID  1
 #define CFG_BOARD_NAME   "T-Dongle-S3"
