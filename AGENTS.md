@@ -1,6 +1,16 @@
 # lily_ducky — DIY BadUSB on the LILYGO T-Dongle family
 
-Research doc: `/home/kasperone/Documents/vault/Claude Code Research/DIY-Rubber-Ducky-BadUSB-Deep-Research.md`
+**Private, vault-authored notes** (research docs, machine/VM facts, USB
+passthrough, host udev automation, local paths) live ONLY in the Obsidian
+vault — never in this public repo. Each clone links them in with a *gitignored*
+`Claude-Docs/` symlink via `scripts/link-claude-docs.sh` (run once per machine;
+`VAULT=... ` to override the vault path). Once linked, they are readable at
+`Claude-Docs/` from the repo root — e.g. the deep-research doc is
+`Claude-Docs/DIY-Rubber-Ducky-BadUSB-Deep-Research.md`, and `CLAUDE.md` imports
+`Claude-Docs/env.md`. If `Claude-Docs/` is missing, run the script; if the
+vault itself isn't synced here, that's a per-machine setup step, not a repo bug.
+Keep private facts in the vault and only source-backed, public-safe knowledge in
+this file and `docs/knowledge-base/`.
 
 **Before touching hardware-facing code, read
 [`docs/knowledge-base/agent-playbook.md`](docs/knowledge-base/agent-playbook.md)
