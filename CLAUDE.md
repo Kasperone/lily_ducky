@@ -44,3 +44,19 @@ fresh session doesn't start from zero.
   into commits and comments — see `docs/knowledge-base/README.md`'s "Why
   this exists" for the pattern (a real source, summarized backwards) so it's
   recognizable if it starts happening again.
+
+## Local environment notes (vault-authored, per-machine, not in git)
+
+Private, machine/VM-specific context (USB passthrough, host udev automation,
+Obsidian vault paths, etc.) is authored in the Obsidian vault — the single home
+that syncs across every machine — and NEVER committed to this public repo. The
+canonical folder is:
+
+    ~/Documents/vault/VMs/archPentestVM/projects/LilyDucky/Claude-Docs/
+
+Each clone links it in with a gitignored symlink (`Claude-Docs/`) via
+`scripts/link-claude-docs.sh` (run once per machine; `VAULT=... ` to override
+the vault path). The import below resolves through that symlink and silently
+no-ops on any machine that hasn't run the script yet:
+
+@Claude-Docs/env.md

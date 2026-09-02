@@ -27,3 +27,7 @@ Thumbs.db
 # Payloads on SD (keep sample .dd files, ignore user-created ones)
 # payloads/*.dd  — keeping all in repo for now
 
+
+# Vault-authored Claude-Docs, linked in per-machine by scripts/link-claude-docs.sh.
+# Private agent notes live ONLY in the Obsidian vault, never in this public repo.
+/Claude-Docs
