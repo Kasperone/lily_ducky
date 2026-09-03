@@ -204,32 +204,47 @@ void Display::init()
 #endif
 }
 
+// Idle-state LED colour also used once the post-completion green window
+// (see INTERP_COMPLETE below) has elapsed — kept in one place so the two
+// call sites can't drift.
+static void ledIdle(bool c2Running, int clients)
+{
+    if (c2Running && clients > 0) {
+        Hal::statusWiFi();
+    } else if (c2Running) {
+        Hal::ledSet(0, 80, 120);
+    } else {
+        Hal::statusIdle();
+    }
+}
+
 void Display::update(InterpState state, bool c2Running, int clients)
 {
     // ── LED (always) ─────────────────────────────────────────────────────
     if (!_errorShown) {  // once in error mode, stay red
         switch (state) {
         case INTERP_IDLE:
-            if (c2Running && clients > 0) {
-                Hal::statusWiFi();
-            } else if (c2Running) {
-                Hal::ledSet(0, 80, 120);
-            } else {
-                Hal::statusIdle();
-            }
+            ledIdle(c2Running, clients);
             break;
 
         case INTERP_RUNNING:
             _stoppedBlinked = false;
+            _completeSince = 0;  // fresh 3 s green window on the next completion
             Hal::statusRunning();
             break;
 
         case INTERP_COMPLETE:
+            // _state latches at INTERP_COMPLETE until the next run() — it never
+            // reverts to IDLE on its own — so this branch runs on every tick
+            // for as long as the interpreter is idle-after-completion. Show
+            // solid green for 3 s, then settle into the same idle colour
+            // INTERP_IDLE uses, without re-zeroing _completeSince (that used to
+            // re-arm the 3 s window every tick and glue the LED to green forever).
             if (_completeSince == 0) _completeSince = millis();
-            Hal::statusComplete();
-            if (millis() - _completeSince > 3000) {
-                _completeSince = 0;
-                Hal::statusIdle();
+            if (millis() - _completeSince <= 3000) {
+                Hal::statusComplete();
+            } else {
+                ledIdle(c2Running, clients);
             }
             break;
 
