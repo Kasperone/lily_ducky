@@ -2,8 +2,10 @@
 # =============================================================================
 # c2_api_test.sh — LilyDucky WiFi C2 end-to-end test suite
 # =============================================================================
-# Run from any machine JOINED to the dongle's SoftAP:
-#   ssid: LilyC2   pass: quackquack
+# Run from any machine JOINED to the dongle's SoftAP. The SSID/password are
+# whatever you set in firmware/src/config_secret.h (gitignored; copy it from
+# config_secret.h.example). SSID defaults to LilyC2. This script itself never
+# needs the WiFi password — it talks HTTP to the already-joined AP.
 #
 # Usage:
 #   ./scripts/c2_api_test.sh [HOST_IP] [TOKEN] [HELLO_DD_PATH]

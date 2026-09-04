@@ -489,8 +489,9 @@ SSH key filename). **Kept deliberately**: the physical unit's MAC address
 (`38:44:BE:BC:FA:C4`) — not a credential, and useful for the still-open gap
 noted in #1's addendum (whether later hardware sessions are testing the same
 physical board). No actual passwords or key material were found in either
-file; the WiFi password appearing in example commands (`quackquack`) is
-already the project's intentionally-public lab default.
+file; the WiFi password appearing in example commands was the project's old
+public lab default, since rotated and moved out of the repo into the
+gitignored `config_secret.h` (see `config_secret.h.example`).
 
 **Standing discipline, unchanged by this resolution:** promoting durable
 findings out of a plan file into this knowledge base (or `AGENTS.md`, or a

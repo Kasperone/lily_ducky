@@ -18,9 +18,11 @@
 STAGED=$(git diff --cached)
 [ -z "$STAGED" ] && exit 0
 
-# Known-safe public defaults — the lab AP password and USB VID/PID are
-# intentionally public (documented in README/config.h).
-WHITELIST='quackquack|LilyC2|0x046D|0xC52B'
+# Known-safe public values — the SoftAP SSID and the USB VID/PID are not
+# secret (SSID is broadcast; VID/PID documented in README/config.h). The real
+# SoftAP password lives in the gitignored config_secret.h and is never staged,
+# so it isn't (and must not be) whitelisted here.
+WHITELIST='LilyC2|0x046D|0xC52B'
 
 # Added lines only: '+' prefix in diff output. Then whitelist, then scan.
 MATCHES=$(printf '%s\n' "$STAGED" \
