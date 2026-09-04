@@ -143,6 +143,22 @@
 #define CFG_AP_IP           "192.168.4.1"
 #define CFG_HTTP_PORT       80
 
+// Diagnostic toggle (off by default, T-Dongle-C5-5g env sets it to 1): move
+// the SoftAP itself from 2.4GHz (CFG_WIFI_CHANNEL) to 5GHz channel 36
+// (U-NII-1, non-DFS — no radar-detection delay, allowed in essentially every
+// regulatory domain). This is separate from Module B's recon capture, which
+// stays pinned to whatever channel the AP is actually on either way. Exists
+// to test whether large-frame/streamed-download failures on this SoftAP are
+// 2.4GHz airtime/congestion or a general (band-independent) limitation —
+// C5 is WiFi 6 dual-band (SOC_WIFI_SUPPORT_5G=1 in the vendored sdkconfig),
+// confirmed before writing this. NOT the default: this changes the C2
+// server's actual operating band, a bigger change than anything else in
+// Module B, so it's opt-in via build flag rather than silently on.
+#ifndef CFG_WIFI_BAND_5G
+#define CFG_WIFI_BAND_5G    0
+#endif
+#define CFG_WIFI_5G_CHANNEL 36
+
 // On-device end-to-end test of the C2 REST API over loopback (no external WiFi
 // client). Off by default; the T-Dongle-C5-selftest env sets it to 1. See
 // firmware/src/c2/c2_selftest.cpp. Guard with #ifndef so a -D build flag wins.
@@ -215,5 +231,14 @@
 // enumerates are dropped — including the C2 auth token, which is otherwise
 // unrecoverable until the next reset. Timeout keeps a headless boot finite.
 #define CFG_SERIAL_CONNECT_WAIT_MS 8000
+
+// ── WiFi Recon / PCAP capture (Module B, Phase 1) ───────────────────────────
+// Phase 1 scope: promiscuous capture of mgmt + EAPOL data frames on the C2
+// SoftAP's own channel, PCAP to SD, pulled over the REST API. Single radio —
+// the SoftAP pins the channel, so this deliberately does NOT hop channels
+// (that's Phase 2, and it would disturb the C2 server while it runs).
+#define CFG_RECON_SNAPLEN     400   // bytes captured per frame (radiotap+80211hdr; covers mgmt/EAPOL)
+#define CFG_RECON_RING_SLOTS  32    // ring buffer depth between the promiscuous RX callback and tick()
+#define SD_RECON_DIR          "/recon"
 
 #endif // LILY_DUCKY_CONFIG_H

@@ -50,9 +50,11 @@ struct LcdState {
     int         clients;
     char        ip[16];
     char        token[17];
+    bool        reconCapturing;
+    uint32_t    reconPackets;
     bool        firstPaint;
 };
-static LcdState _last = { (InterpState)-1, false, -1, "", "", true };
+static LcdState _last = { (InterpState)-1, false, -1, "", "", false, 0, true };
 
 // Layout constants (landscape, 160×80)
 static const int ROW_TITLE   = 2;
@@ -60,6 +62,7 @@ static const int ROW_SSID    = 20;
 static const int ROW_IP      = 32;
 static const int ROW_TOKEN   = 44;
 static const int ROW_CLIENTS = 56;
+static const int ROW_RECON   = 68;
 static const int COL_LABEL   = 2;
 static const int COL_VALUE   = 50;
 static const int DOT_R       = 4;
@@ -117,6 +120,7 @@ static void paintStaticFrame()
     _tft.setCursor(COL_LABEL, ROW_IP);      _tft.print("IP:");
     _tft.setCursor(COL_LABEL, ROW_TOKEN);   _tft.print("Token:");
     _tft.setCursor(COL_LABEL, ROW_CLIENTS); _tft.print("Clients:");
+    _tft.setCursor(COL_LABEL, ROW_RECON);   _tft.print("Recon:");
 
     // SSID is static — paint once
     _tft.setTextColor(TFT_WHITE, TFT_BLACK);
@@ -140,15 +144,18 @@ static void lcdInit()
 // Returns true if it actually painted anything to the LCD this call. The
 // caller uses that to re-latch the status LED (Hal::ledRefresh) — on the C5 the
 // LED shares this SPI bus, so any paint here clocks garbage through it.
-static bool lcdUpdate(InterpState s, bool c2Running, int clients)
+static bool lcdUpdate(InterpState s, bool c2Running, int clients,
+                       bool reconCapturing, uint32_t reconPackets)
 {
     bool painted = false;
     // Snapshot dynamic fields. Zero-init so the firstPaint slot doesn't
     // pick up stack garbage when we copy cur → _last below.
     LcdState cur = {};
-    cur.interp     = s;
-    cur.c2Running  = c2Running;
-    cur.clients    = clients;
+    cur.interp         = s;
+    cur.c2Running      = c2Running;
+    cur.clients        = clients;
+    cur.reconCapturing = reconCapturing;
+    cur.reconPackets   = reconPackets;
     IPAddress ip   = WiFi.softAPIP();
     snprintf(cur.ip, sizeof(cur.ip), "%s", ip.toString().c_str());
     const char* tok = C2Server::authToken();
@@ -169,6 +176,15 @@ static bool lcdUpdate(InterpState s, bool c2Running, int clients)
         char buf[8];
         snprintf(buf, sizeof(buf), "%d", cur.clients);
         writeField(ROW_CLIENTS, buf, cur.clients > 0 ? TFT_GREEN : TFT_WHITE);
+        painted = true;
+    }
+    if (_last.firstPaint ||
+        _last.reconCapturing != cur.reconCapturing ||
+        _last.reconPackets != cur.reconPackets) {
+        char buf[16];
+        if (cur.reconCapturing) snprintf(buf, sizeof(buf), "REC %lu", (unsigned long)cur.reconPackets);
+        else snprintf(buf, sizeof(buf), "off");
+        writeField(ROW_RECON, buf, cur.reconCapturing ? TFT_RED : TFT_DARKGREY);
         painted = true;
     }
     if (_last.firstPaint ||
@@ -218,7 +234,8 @@ static void ledIdle(bool c2Running, int clients)
     }
 }
 
-void Display::update(InterpState state, bool c2Running, int clients)
+void Display::update(InterpState state, bool c2Running, int clients,
+                      bool reconCapturing, uint32_t reconPackets)
 {
     // ── LED (always) ─────────────────────────────────────────────────────
     if (!_errorShown) {  // once in error mode, stay red
@@ -267,7 +284,7 @@ void Display::update(InterpState state, bool c2Running, int clients)
 
     // ── LCD (only when enabled — diff-gated inside) ──────────────────────
 #if LCD_ENABLED
-    bool painted = lcdUpdate(state, c2Running, clients);
+    bool painted = lcdUpdate(state, c2Running, clients, reconCapturing, reconPackets);
     // On the C5 the APA102 shares this SPI bus, so a paint just clocked garbage
     // through the CS-less LED — re-latch the status colour. No-op elsewhere.
     if (painted) Hal::ledRefresh();

@@ -9,9 +9,15 @@
 //   PUT  /api/payload/<name> → Save payload body                 [auth]
 //   POST /api/run/<name>     → Trigger payload execution         [auth]
 //   POST /api/stop           → Stop running payload              [auth]
+//   POST /api/recon/start    → Start PCAP capture (AP's channel) [auth]
+//   POST /api/recon/stop     → Stop PCAP capture                 [auth]
+//   GET  /api/recon/status   → JSON: {capturing, file, packets, dropped}
+//   GET  /api/recon/pcap/<name> → Serve a capture                [auth]
 // =============================================================================
 
 #include "web_server.h"
+#include "recon/recon.h"
+#include <esp_wifi.h>
 #include <uri/UriBraces.h>  // {} path-arg matching — a bare String route is
                             // matched LITERALLY (Uri::canHandle is _uri ==
                             // requestUri), so "/api/payload/(.*)" only ever
@@ -399,6 +405,73 @@ static void handleStop()
     _server.send(200, "text/plain", "Stopped");
 }
 
+// ── Recon (Module B, Phase 1: ap_capture only — see recon/recon.h) ─────────
+static void handleReconStart()
+{
+    if (!authOk()) return;
+    char file[40];
+    if (!Recon::startCapture(file, sizeof(file))) {
+        _server.send(409, "text/plain", "Capture already running or SD unavailable");
+        return;
+    }
+    _server.send(200, "application/json", "{\"file\":\"" + String(file) + "\"}");
+}
+
+static void handleReconStop()
+{
+    if (!authOk()) return;
+    Recon::stopCapture();
+    _server.send(200, "text/plain", "Stopped");
+}
+
+static void handleReconStatus()
+{
+    String j = "{\"capturing\":";
+    j += Recon::capturing() ? "true" : "false";
+    j += ",\"file\":\"" + String(Recon::currentFile()) + "\"";
+    j += ",\"packets\":" + String(Recon::packetCount());
+    j += ",\"dropped\":" + String(Recon::droppedCount());
+    j += "}";
+    _server.send(200, "application/json", j);
+}
+
+static void handleReconGetPcap()
+{
+    // Auth-gated unlike handleGetPayload's plain GET: a capture can contain
+    // an EAPOL handshake, which is more sensitive than a payload script.
+    if (!authOk()) return;
+    String name = _server.pathArg(0);
+    if (!validName(name)) {
+        _server.send(400, "text/plain", "Invalid name");
+        return;
+    }
+    char path[64];
+    snprintf(path, sizeof(path), "%s/%s", SD_RECON_DIR, name.c_str());
+    File f = Storage::fs().open(path);
+    if (!f) {
+        _server.send(404, "text/plain", "Not found");
+        return;
+    }
+
+    // History: this route briefly used a manual client().setNoDelay(true) +
+    // 512-byte sendContent() loop, added to force small TCP segments past a
+    // 2.4GHz large-frame drop (ping -l 1400 -> 100% loss). Confirmed on 5GHz
+    // that the large-frame problem is gone (same ping -> 0% loss), and that
+    // the NODELAY+tiny-chunk hack had become actively counterproductive: it
+    // was overrunning the SoftAP's TX path with 40 back-to-back forced
+    // segments (per-chunk write-return logging showed a clean fill-then-
+    // stall at chunk 7/3072 bytes, connected() still true, no socket error —
+    // classic send-buffer-never-drains, not a link failure). Reverted to
+    // plain streamFile(), which lets TCP batch and Nagle-pace writes
+    // normally (~14 larger, ACK-clocked segments instead of 40 tiny forced
+    // ones) — exactly what 5GHz has no trouble carrying.
+    size_t total = f.size();
+    Serial.printf("[RECON] pcap download starting: %s, %u bytes\n", name.c_str(), (unsigned)total);
+    size_t sent = _server.streamFile(f, "application/vnd.tcpdump.pcap");
+    Serial.printf("[RECON] pcap download complete: %u/%u bytes sent\n", (unsigned)sent, (unsigned)total);
+    f.close();
+}
+
 static void handleNotFound()
 {
     _server.send(404, "text/plain", "Not found");
@@ -409,6 +482,29 @@ bool C2Server::start()
 {
     Serial.print("[C2] Starting SoftAP...");
     WiFi.softAP(CFG_WIFI_SSID, CFG_WIFI_PASS, CFG_WIFI_CHANNEL, 0, 1);
+
+#if CFG_WIFI_BAND_5G
+    // esp_wifi_set_band_mode() requires WiFi already started (it returns
+    // ESP_ERR_WIFI_NOT_STARTED otherwise) — that's why this runs AFTER
+    // WiFi.softAP() above rather than before it. Country code is set
+    // explicitly (not left at the default "01" world-safe mode) because
+    // channel 36's availability under "01" isn't something to assume;
+    // "US" allows it outright and this is a local lab AP, not a shipped
+    // product. Per esp_wifi.h's own attention note, switching band mode
+    // defaults the AP to channel 36 with no channel previously set for
+    // that band — the explicit esp_wifi_set_channel() call after it is
+    // just to not depend on that implicit default.
+    esp_wifi_set_country_code("US", true);
+    esp_err_t bandErr = esp_wifi_set_band_mode(WIFI_BAND_MODE_5G_ONLY);
+    if (bandErr == ESP_OK) {
+        esp_wifi_set_channel(CFG_WIFI_5G_CHANNEL, WIFI_SECOND_CHAN_NONE);
+        Serial.printf(" [5GHz test build] band mode -> 5G_ONLY, channel %d;", CFG_WIFI_5G_CHANNEL);
+    } else {
+        Serial.printf(" [5GHz test build] esp_wifi_set_band_mode failed (0x%x) — staying on 2.4GHz channel %d;",
+                      bandErr, CFG_WIFI_CHANNEL);
+    }
+#endif
+
     IPAddress ip = WiFi.softAPIP();
     Serial.printf(" OK — %s\n", ip.toString().c_str());
 
@@ -424,6 +520,10 @@ bool C2Server::start()
     _server.on(UriBraces("/api/payload/{}"), HTTP_PUT, handlePutPayload);
     _server.on(UriBraces("/api/run/{}"), HTTP_POST, handleRunPayload);
     _server.on("/api/stop", HTTP_POST, handleStop);
+    _server.on("/api/recon/start", HTTP_POST, handleReconStart);
+    _server.on("/api/recon/stop", HTTP_POST, handleReconStop);
+    _server.on("/api/recon/status", HTTP_GET, handleReconStatus);
+    _server.on(UriBraces("/api/recon/pcap/{}"), HTTP_GET, handleReconGetPcap);
     _server.onNotFound(handleNotFound);
 
     // Without this the `WebServer` class drops non-standard request headers,

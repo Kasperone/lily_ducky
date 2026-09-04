@@ -20,7 +20,8 @@ namespace Display {
     // Update display based on current interpreter + WiFi state.
     // Call every loop — paints to the LCD are diff-gated so this stays
     // cheap when nothing has changed.
-    void update(InterpState interpState, bool c2Running, int clients);
+    void update(InterpState interpState, bool c2Running, int clients,
+                bool reconCapturing, uint32_t reconPackets);
 
 } // namespace Display
 
