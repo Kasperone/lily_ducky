@@ -19,6 +19,8 @@
 #include "storage/storage.h"
 #include "c2/web_server.h"
 #include "display/display.h"
+#include "recon/recon.h"
+#include "console/console.h"
 #if CFG_C2_SELFTEST
 #include "c2/c2_selftest.h"
 #endif
@@ -205,11 +207,19 @@ void loop()
     // Tick WiFi C2
     C2Server::tick();
 
+    // Drain any captured recon frames to SD (no-op when not capturing)
+    Recon::tick();
+
+    // Serial console commands (e.g. DUMP <file> — see console/console.h)
+    Console::tick();
+
     // Update display based on current state
     Display::update(
         interp.getState(),
         C2Server::running(),
-        C2Server::connectedClients()
+        C2Server::connectedClients(),
+        Recon::capturing(),
+        Recon::packetCount()
     );
 
     // Check button press → trigger payload (alternative to auto-fire)
