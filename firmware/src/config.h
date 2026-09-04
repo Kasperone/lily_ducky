@@ -137,8 +137,14 @@
 
 // ── WiFi C2 defaults ────────────────────────────────────────────────────────
 
-#define CFG_WIFI_SSID       "LilyC2"
-#define CFG_WIFI_PASS       "quackquack"
+// SoftAP credentials (CFG_WIFI_SSID / CFG_WIFI_PASS) live in the gitignored
+// config_secret.h — copy config_secret.h.example to config_secret.h and set
+// real values. Keeps credentials out of this public repo.
+#if __has_include("config_secret.h")
+#  include "config_secret.h"
+#else
+#  error "Create config_secret.h from config_secret.h.example (see README)"
+#endif
 #define CFG_WIFI_CHANNEL    6
 #define CFG_AP_IP           "192.168.4.1"
 #define CFG_HTTP_PORT       80

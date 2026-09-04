@@ -43,7 +43,7 @@ regardless of intent, and "it was just a demo" is not a defense.
 | 🎯 **Your own hardware only** | Test exclusively against machines you own — lab VMs, spare laptops. Never plug into employer, public, or borrowed systems. |
 | 📄 **Written authorization** | Any test on someone else's equipment requires explicit written permission first. |
 | 📦 **Physical security** | Treat the flashed dongle like a loaded weapon: label it, store it, never leave it unattended where someone could plug it in. |
-| 🔒 **Change default credentials** | The WiFi C2 defaults (`LilyC2` / `quackquack`) are public. Change them in `firmware/src/config.h` before any test that isn't fully air-gapped. |
+| 🔒 **Set your SoftAP credentials** | There is no hardcoded credential in the repo. Copy `firmware/src/config_secret.h.example` to `firmware/src/config_secret.h` (gitignored) and set your own SSID/password before building — see [Wi-Fi / SoftAP credentials](#0-wi-fi--softap-credentials-first-build). The build fails loudly until you do. |
 | 🧹 **Wipe before disposal** | The SD card stores payloads and captured keystrokes (`/loot`). Wipe it before selling, lending, or trashing the device. |
 
 **Jurisdiction matters.** Some countries restrict possession or import of "hacker tools".
@@ -91,6 +91,19 @@ deliberately readable.
   (or the VS Code extension)
 - A USB cable that carries **data**, not just power
 - A micro SD card (FAT32)
+
+### 0. Wi-Fi / SoftAP credentials (first build)
+
+The SoftAP SSID and password are **not** stored in the repo. On a fresh clone,
+create your local secret header from the template:
+
+```bash
+cp firmware/src/config_secret.h.example firmware/src/config_secret.h
+# then edit firmware/src/config_secret.h and set your own SSID / password
+```
+
+`config_secret.h` is gitignored, so your credentials never get committed. If it's
+missing, the build stops with a clear `#error` pointing you back here.
 
 ### 1. Build & flash (T-Dongle-C5)
 

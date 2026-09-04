@@ -34,3 +34,6 @@ Thumbs.db
 
 # Recon captures — pulled off SD via serial DUMP, kept out of the repo
 *.pcap
+
+# Real SoftAP credentials — copied from config_secret.h.example, never committed
+firmware/src/config_secret.h
