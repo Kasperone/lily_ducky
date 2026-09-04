@@ -135,7 +135,7 @@ T-Dongle-S3 (USB-OTG) — or BLE HID, which both boards can do (BLE 5).
 - Static arrays in interpreter (no malloc — embedded safe)
 - Auto-fire payload on USB plug-in (2s enumeration delay, configurable) — S3 only;
   C5 boots straight to WiFi C2 and runs the payload with typing as no-ops
-- WiFi C2: 192.168.4.1, SSID `LilyC2`, pass `quackquack` — change before any non-airgapped test
+- WiFi C2: 192.168.4.1, SSID `LilyC2`, password set in gitignored `firmware/src/config_secret.h` (copy from `config_secret.h.example`) — not committed
 - C2 auth: 16-char token generated at boot, printed to USB-CDC serial; required on
   `X-Auth-Token` header for `PUT /api/payload/*`, `POST /api/run/*`, `POST /api/stop`
 - VID/PID: Logitech 0x046D/0xC52B via build flags (baked into TinyUSB descriptor at compile time)
