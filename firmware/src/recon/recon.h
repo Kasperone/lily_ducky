@@ -33,6 +33,31 @@ namespace Recon {
     uint32_t droppedCount();    // frames dropped because the ring was full
     const char* currentFile();  // empty string when not capturing
 
+    // ── Phase 2a: dual-band AP scan / enumeration ──────────────────────────
+    // One access point as seen by a managed scan.
+    struct ApRecord {
+        uint8_t bssid[6];
+        char    ssid[33];       // 32 chars + NUL; empty string => hidden SSID
+        bool    hidden;
+        uint8_t channel;        // primary channel
+        bool    band5;          // false = 2.4 GHz, true = 5 GHz (derived from channel)
+        int8_t  rssi;           // dBm
+        uint8_t authmode;       // wifi_auth_mode_t
+        bool    pmf;            // best-effort in 2a (WPA3 => PMF); reliable parse is 2b
+    };
+
+    // Kicks off an async managed scan across the channels the current band
+    // allows. keepApUp=true (default) scans with the SoftAP up (APSTA) so the
+    // dashboard stays live — brief client blips as the radio hops. keepApUp=
+    // false tears the SoftAP down for an unconstrained dual-band sweep and
+    // restores it afterward. Fails if a capture or scan is already running.
+    // Results land after ~1-3 s; poll scanning(), then read apCount()/apRecord().
+    bool startScan(bool keepApUp = true);
+    bool scanning();                       // true while a sweep is in flight
+    uint32_t apCount();                    // APs found by the last completed scan
+    const ApRecord* apRecord(uint32_t i);  // nullptr if i is out of range
+    uint32_t lastScanMillis();             // millis() at last scan completion (0 = none)
+
 } // namespace Recon
 
 #endif
