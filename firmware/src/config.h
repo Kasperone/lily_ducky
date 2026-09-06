@@ -247,4 +247,15 @@
 #define CFG_RECON_RING_SLOTS  32    // ring buffer depth between the promiscuous RX callback and tick()
 #define SD_RECON_DIR          "/recon"
 
+// ── WiFi Recon / SCAN (Module B, Phase 2a) ──────────────────────────────────
+// Dual-band AP enumeration via a managed scan (esp_wifi_scan_start, wrapped by
+// Arduino WiFi.scanNetworks). Mutually exclusive with capture — one radio.
+// Default keeps the SoftAP up (APSTA) so the dashboard stays live during the
+// sweep, accepting brief client blips as the radio hops off the AP's home
+// channel; an optional variant tears the AP down for an unconstrained sweep.
+// Reliable RSN-IE PMF parsing is Phase 2b (promiscuous hop); 2a reports PMF
+// best-effort from the scan's authmode (WPA3 => PMF).
+#define CFG_RECON_SCAN_MAX_APS   32   // AP table capacity (RAM-resident)
+#define CFG_RECON_SCAN_DWELL_MS  300  // max dwell per channel during the sweep
+
 #endif // LILY_DUCKY_CONFIG_H

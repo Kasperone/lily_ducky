@@ -11,7 +11,9 @@
 //   POST /api/stop           → Stop running payload              [auth]
 //   POST /api/recon/start    → Start PCAP capture (AP's channel) [auth]
 //   POST /api/recon/stop     → Stop PCAP capture                 [auth]
-//   GET  /api/recon/status   → JSON: {capturing, file, packets, dropped}
+//   GET  /api/recon/status   → JSON: {capturing, file, packets, dropped, scanning}
+//   POST /api/recon/scan[?ap=down] → Start dual-band AP scan      [auth]
+//   GET  /api/recon/scan     → JSON: {scanning, lastScanMs, count, aps[...]}
 //   GET  /api/recon/pcap/<name> → Serve a capture                [auth]
 // =============================================================================
 
@@ -431,7 +433,85 @@ static void handleReconStatus()
     j += ",\"file\":\"" + String(Recon::currentFile()) + "\"";
     j += ",\"packets\":" + String(Recon::packetCount());
     j += ",\"dropped\":" + String(Recon::droppedCount());
+    j += ",\"scanning\":";
+    j += Recon::scanning() ? "true" : "false";
     j += "}";
+    _server.send(200, "application/json", j);
+}
+
+// Minimal JSON string escaper for values we don't control. Unlike payload
+// names (constrained by validName), a scanned SSID is arbitrary bytes and may
+// contain " or \ or control chars — emitting it raw would break the JSON.
+static String jsonEscape(const char* s)
+{
+    String out;
+    for (const char* p = s; *p; p++) {
+        unsigned char c = (unsigned char)*p;
+        switch (c) {
+            case '\"': out += "\\\""; break;
+            case '\\': out += "\\\\"; break;
+            case '\n': out += "\\n";  break;
+            case '\r': out += "\\r";  break;
+            case '\t': out += "\\t";  break;
+            default:
+                if (c < 0x20) {
+                    char buf[7];
+                    snprintf(buf, sizeof(buf), "\\u%04x", c);
+                    out += buf;
+                } else {
+                    out += (char)c;
+                }
+        }
+    }
+    return out;
+}
+
+// ── Recon scan (Module B, Phase 2a: dual-band AP enumeration) ───────────────
+// POST /api/recon/scan[?ap=down] starts an async managed scan; default keeps
+// the SoftAP up (APSTA), ?ap=down tears it down for an unconstrained dual-band
+// sweep and restores it after. GET returns the last scan's AP table.
+static void handleReconScanStart()
+{
+    if (!authOk()) return;
+    if (Recon::scanning() || Recon::capturing()) {
+        _server.send(409, "text/plain", "Scan or capture already running");
+        return;
+    }
+    // Send the ack BEFORE the sweep starts. Once WiFi.scanNetworks() begins the
+    // single radio hops off the AP channel and the SoftAP can't reliably TX, so
+    // a response sent after startScan() races the hop and is lost. Note: the
+    // ?ap=down variant is deferred (see Recon::startScan) — every scan runs
+    // AP-up for now, so the ack always reports apUp:true.
+    _server.send(200, "application/json", "{\"scanning\":true,\"apUp\":true}");
+    Recon::startScan(true);
+}
+
+static void handleReconScanResults()
+{
+    char bssid[18];
+    String j = "{\"scanning\":";
+    j += Recon::scanning() ? "true" : "false";
+    j += ",\"lastScanMs\":" + String(Recon::lastScanMillis());
+    j += ",\"count\":" + String(Recon::apCount());
+    j += ",\"aps\":[";
+    for (uint32_t i = 0; i < Recon::apCount(); i++) {
+        const Recon::ApRecord* r = Recon::apRecord(i);
+        if (!r) break;
+        snprintf(bssid, sizeof(bssid), "%02X:%02X:%02X:%02X:%02X:%02X",
+                 r->bssid[0], r->bssid[1], r->bssid[2],
+                 r->bssid[3], r->bssid[4], r->bssid[5]);
+        if (i) j += ",";
+        j += "{\"bssid\":\"" + String(bssid) + "\"";
+        j += ",\"ssid\":\"" + jsonEscape(r->hidden ? "" : r->ssid) + "\"";
+        j += ",\"hidden\":"; j += r->hidden ? "true" : "false";
+        j += ",\"channel\":" + String(r->channel);
+        j += ",\"band\":\""; j += r->band5 ? "5" : "2.4"; j += "\"";
+        j += ",\"rssi\":" + String(r->rssi);
+        j += ",\"authmode\":" + String(r->authmode);
+        j += ",\"pmf\":"; j += r->pmf ? "true" : "false";
+        j += "}";
+    }
+    j += "]}";
     _server.send(200, "application/json", j);
 }
 
@@ -477,8 +557,11 @@ static void handleNotFound()
     _server.send(404, "text/plain", "Not found");
 }
 
-// ── Public: start / stop / tick ─────────────────────────────────────────────
-bool C2Server::start()
+// ── SoftAP radio bring-up ───────────────────────────────────────────────────
+// Extracted from start() so restartSoftAp() (Recon Phase 2a AP-down scan
+// variant) can restore the AP after a sweep without duplicating the band-mode
+// logic. Brings up softAP + band/channel only — no routes, token, or _running.
+static void startSoftApRadio()
 {
     Serial.print("[C2] Starting SoftAP...");
     WiFi.softAP(CFG_WIFI_SSID, CFG_WIFI_PASS, CFG_WIFI_CHANNEL, 0, 1);
@@ -507,6 +590,14 @@ bool C2Server::start()
 
     IPAddress ip = WiFi.softAPIP();
     Serial.printf(" OK — %s\n", ip.toString().c_str());
+}
+
+void C2Server::restartSoftAp() { startSoftApRadio(); }
+
+// ── Public: start / stop / tick ─────────────────────────────────────────────
+bool C2Server::start()
+{
+    startSoftApRadio();
 
     generateToken();
     Serial.printf("[C2] Auth token: %s\n", _authToken);
@@ -523,6 +614,8 @@ bool C2Server::start()
     _server.on("/api/recon/start", HTTP_POST, handleReconStart);
     _server.on("/api/recon/stop", HTTP_POST, handleReconStop);
     _server.on("/api/recon/status", HTTP_GET, handleReconStatus);
+    _server.on("/api/recon/scan", HTTP_POST, handleReconScanStart);
+    _server.on("/api/recon/scan", HTTP_GET, handleReconScanResults);
     _server.on(UriBraces("/api/recon/pcap/{}"), HTTP_GET, handleReconGetPcap);
     _server.onNotFound(handleNotFound);
 

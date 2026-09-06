@@ -29,6 +29,13 @@ namespace C2Server {
     int connectedClients();
     IPAddress apIP();
 
+    // Re-establish the SoftAP radio (softAP + band/channel) without touching
+    // routes, the auth token, or running state. Reserved for the deferred
+    // Recon ?ap=down variant; deliberately NOT called from the scan-complete
+    // path — a full re-init there hung the main loop (see recon.cpp harvestScan,
+    // 2026-09-06), which is why 2a uses a light STA-drop recovery instead.
+    void restartSoftAp();
+
     // C2 auth token (random per boot, printed to serial). Required on the
     // X-Auth-Token header for mutating routes. Returns an empty string
     // before start() has run.

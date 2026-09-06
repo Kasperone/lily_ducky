@@ -3,6 +3,7 @@
 // =============================================================================
 #include "recon.h"
 #include <esp_wifi.h>
+#include <WiFi.h>
 #include "config.h"
 #include "storage/storage.h"
 #include "pcap_writer.h"
@@ -31,6 +32,15 @@ static volatile uint32_t _dropped = 0;
 static uint32_t _packetCount = 0;
 static char _currentFile[40] = "";  // basename only (matches the payload API's convention)
 static bool _capturing = false;
+
+// ── Phase 2a scan state ─────────────────────────────────────────────────────
+// The managed scan (WiFi.scanNetworks) is async; tick() harvests the result
+// once WiFi.scanComplete() reports done. Scan and capture are mutually
+// exclusive (one radio) — both start functions refuse if the other is active.
+static Recon::ApRecord _aps[CFG_RECON_SCAN_MAX_APS];
+static uint32_t _apCount = 0;
+static bool _scanning = false;
+static uint32_t _lastScanMs = 0;
 
 // Data frame -> EAPOL check: standard 802.11 QoS-Data header (24B, +2B QoS
 // Control when the subtype's QoS bit is set) followed by an 802.2 LLC/SNAP
@@ -92,7 +102,7 @@ static void promiscuousCb(void* buf, wifi_promiscuous_pkt_type_t type)
 
 bool Recon::startCapture(char* outPath, size_t outPathLen)
 {
-    if (_capturing) return false;
+    if (_capturing || _scanning) return false;   // one radio — no overlap
     if (!Storage::ready()) return false;
 
     if (!Storage::dirExists(SD_RECON_DIR) && !Storage::createDir(SD_RECON_DIR)) {
@@ -142,8 +152,82 @@ void Recon::stopCapture()
 
 bool Recon::capturing() { return _capturing; }
 
+// Derive band from primary channel: 1..14 = 2.4 GHz, 32+ = 5 GHz (U-NII).
+static bool channelIs5G(uint8_t ch) { return ch >= 32; }
+
+// WPA3 (and WPA2/WPA3-transition) implies PMF. This is the 2a best-effort
+// heuristic; Phase 2b reads MFPC/MFPR from the beacon RSN IE for certainty.
+static bool authImpliesPmf(uint8_t authmode)
+{
+    return authmode == WIFI_AUTH_WPA3_PSK ||
+           authmode == WIFI_AUTH_WPA2_WPA3_PSK ||
+           authmode == WIFI_AUTH_WPA3_ENT_192 ||
+           authmode == WIFI_AUTH_WPA3_EXT_PSK;
+}
+
+// Pull the finished async scan into the RAM table, print it to serial (the
+// reliable readout), free the driver's copy, and do a light AP recovery.
+// Called from tick() once the async scan reports done.
+static void harvestScan()
+{
+    int16_t n = WiFi.scanComplete();
+    if (n == WIFI_SCAN_RUNNING) return;   // still sweeping
+
+    _apCount = 0;
+    if (n > 0) {
+        uint32_t cap = (uint32_t)n < CFG_RECON_SCAN_MAX_APS ? (uint32_t)n
+                                                            : CFG_RECON_SCAN_MAX_APS;
+        for (uint32_t i = 0; i < cap; i++) {
+            Recon::ApRecord& r = _aps[_apCount];
+            const uint8_t* b = WiFi.BSSID(i);
+            if (b) memcpy(r.bssid, b, 6); else memset(r.bssid, 0, 6);
+            String ssid = WiFi.SSID(i);
+            r.hidden = (ssid.length() == 0);
+            strncpy(r.ssid, ssid.c_str(), sizeof(r.ssid) - 1);
+            r.ssid[sizeof(r.ssid) - 1] = '\0';
+            r.channel = (uint8_t)WiFi.channel(i);
+            r.band5 = channelIs5G(r.channel);
+            r.rssi = (int8_t)WiFi.RSSI(i);
+            r.authmode = (uint8_t)WiFi.encryptionType(i);
+            r.pmf = authImpliesPmf(r.authmode);
+            _apCount++;
+        }
+    }
+    WiFi.scanDelete();   // release the driver-side result buffer
+    _lastScanMs = millis();
+    _scanning = false;
+
+    // Print the AP table FIRST — serial is the authoritative, reliable readout
+    // on this hardware (SoftAP TX is unreliable during/after a scan, same
+    // reason pcap retrieval uses the serial DUMP path), so it must not depend
+    // on any recovery step that follows.
+    Serial.printf("[RECON] Scan done: %lu AP(s)%s\n",
+                  (unsigned long)_apCount,
+                  n < 0 ? " (scan failed)" : "");
+    for (uint32_t i = 0; i < _apCount; i++) {
+        const Recon::ApRecord& r = _aps[i];
+        Serial.printf("[RECON]  %02X:%02X:%02X:%02X:%02X:%02X  ch%-3u %s  %4d dBm  auth=%u%s  %s\n",
+                      r.bssid[0], r.bssid[1], r.bssid[2], r.bssid[3], r.bssid[4], r.bssid[5],
+                      r.channel, r.band5 ? "5G  " : "2.4G", r.rssi, r.authmode,
+                      r.pmf ? " PMF" : "", r.hidden ? "<hidden>" : r.ssid);
+    }
+
+    // Best-effort recovery of the SoftAP after the APSTA sweep. Drop ONLY the
+    // STA interface the scan added (return to AP-only) — a light, non-blocking
+    // mode change. A full SoftAP re-init (WiFi.softAP) from this scan-complete
+    // path HUNG the main loop (confirmed on hardware 2026-09-06), so it is
+    // deliberately NOT used. REST-over-SoftAP is best-effort on this hardware;
+    // the serial table above is the readout that matters. Markers bracket the
+    // call so any stall here is pinpointed on serial.
+    Serial.println("[RECON] light AP recovery (drop STA)...");
+    WiFi.enableSTA(false);
+    Serial.println("[RECON] AP recovery done");
+}
+
 void Recon::tick()
 {
+    if (_scanning) harvestScan();
+
     while (_tail != _head) {
         ReconFrame& slot = _ring[_tail];
         PcapWriter::writeFrame(slot.data, slot.len, slot.origLen,
@@ -168,3 +252,36 @@ void Recon::tick()
 uint32_t Recon::packetCount() { return _packetCount; }
 uint32_t Recon::droppedCount() { return _dropped; }
 const char* Recon::currentFile() { return _currentFile; }
+
+// ── Phase 2a: dual-band AP scan ─────────────────────────────────────────────
+bool Recon::startScan(bool keepApUp)
+{
+    if (_capturing || _scanning) return false;   // one radio — no overlap
+
+    // The SoftAP-DOWN variant is deferred: tearing the AP down for the sweep
+    // required a full SoftAP re-init to restore it, which hung the main loop
+    // from the scan-complete path (2026-09-06). The AP-UP scan already
+    // enumerates BOTH bands (5 GHz APs appear in the results), so every scan
+    // runs AP-up for now regardless of keepApUp; AP-down returns once there's
+    // a safe AP-restore path.
+    (void)keepApUp;
+
+    // async=true, show_hidden=true, passive=false, dwell per channel, ch 0=all.
+    // Arduino brings up STA for the scan; with the AP up this is APSTA and the
+    // dashboard keeps serving between channel hops.
+    int16_t rc = WiFi.scanNetworks(true, true, false, CFG_RECON_SCAN_DWELL_MS, 0);
+    if (rc != WIFI_SCAN_RUNNING) {
+        Serial.printf("[RECON] Scan start failed (rc=%d)\n", rc);
+        return false;
+    }
+
+    _scanning = true;
+    _apCount = 0;
+    Serial.println("[RECON] Scan started (SoftAP up)");
+    return true;
+}
+
+bool Recon::scanning() { return _scanning; }
+uint32_t Recon::apCount() { return _apCount; }
+const Recon::ApRecord* Recon::apRecord(uint32_t i) { return i < _apCount ? &_aps[i] : nullptr; }
+uint32_t Recon::lastScanMillis() { return _lastScanMs; }
