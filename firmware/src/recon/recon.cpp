@@ -69,7 +69,9 @@ static Recon::StaRecord _stas[CFG_RECON_MAX_STAS];
 static uint32_t _staCount = 0;
 static bool _enumRunning = false;
 static uint8_t _enumTargetBssid[6];
+static uint32_t _enumApIdx = 0;   // for finishEnum() to re-derive the target's bssid/channel for the SD record
 static uint32_t _enumStartMs = 0;
+static uint8_t _enumAttempt = 0;  // 1-based; tickEnum() extends the dwell once if _staCount==0 (see config.h)
 
 // True while any mode already owns the single radio — every start* function
 // must check this before touching WiFi/esp_wifi state.
@@ -79,6 +81,37 @@ static bool radioBusy()
 }
 
 bool Recon::busy() { return radioBusy(); }
+
+// ── Phase 2c: persist SCAN/PMF/ENUM results to SD ───────────────────────────
+// Same plain-text lines already printed to serial, written once per
+// completed run so a result survives even if nobody was watching serial
+// live — retrieve with the existing console `DUMP <file>` command (already
+// covers SD_RECON_DIR, no new retrieval path needed). No new radio calls
+// here, so unlike PMF sweep/ENUM this needs no risk gate.
+static bool writeReconResultFile(const char* prefix, const String& body)
+{
+    if (!Storage::ready()) {
+        Serial.println("[RECON] SD save skipped (not ready)");
+        return false;
+    }
+    if (!Storage::dirExists(SD_RECON_DIR) && !Storage::createDir(SD_RECON_DIR)) {
+        Serial.println("[RECON] SD save failed (couldn't create dir)");
+        return false;
+    }
+    unsigned long ts = millis(); // captured once — reused below so the printed
+                                  // basename can't drift from the one actually written
+    char basename[40];
+    snprintf(basename, sizeof(basename), "%s_%lu.txt", prefix, ts);
+    char path[64];
+    snprintf(path, sizeof(path), "%s/%s", SD_RECON_DIR, basename);
+    bool ok = Storage::writeFile(path, body.c_str());
+    // Print just the basename (matches DUMP's own argument convention —
+    // SD_RECON_DIR is implicit, see console.cpp's handleDump).
+    Serial.printf(ok ? "[RECON] saved -> %s (DUMP %s to retrieve)\n"
+                      : "[RECON] SD save FAILED -> %s\n",
+                  basename, basename);
+    return ok;
+}
 
 // Data frame -> EAPOL check: standard 802.11 QoS-Data header (24B, +2B QoS
 // Control when the subtype's QoS bit is set) followed by an 802.2 LLC/SNAP
@@ -388,15 +421,22 @@ static void finishPmfSweep()
     _pmfSweeping = false;
     restoreApChannelAndRecover();
 
-    Serial.printf("[RECON] PMF sweep done: %lu/%lu AP(s) confirmed\n",
-                  (unsigned long)_pmfConfirmed, (unsigned long)_apCount);
+    char lineBuf[80];
+    String fileBody;
+    snprintf(lineBuf, sizeof(lineBuf), "[RECON] PMF sweep done: %lu/%lu AP(s) confirmed\n",
+             (unsigned long)_pmfConfirmed, (unsigned long)_apCount);
+    Serial.print(lineBuf);
+    fileBody += lineBuf;
     for (uint32_t i = 0; i < _apCount; i++) {
         const Recon::ApRecord& r = _aps[i];
         if (r.pmfStatus == Recon::PmfStatus::UNKNOWN) continue; // no beacon seen this sweep
-        Serial.printf("[RECON]  %02X:%02X:%02X:%02X:%02X:%02X  pmf=%s\n",
-                      r.bssid[0], r.bssid[1], r.bssid[2], r.bssid[3], r.bssid[4], r.bssid[5],
-                      pmfStatusStr(r.pmfStatus));
+        snprintf(lineBuf, sizeof(lineBuf), "[RECON]  %02X:%02X:%02X:%02X:%02X:%02X  pmf=%s\n",
+                 r.bssid[0], r.bssid[1], r.bssid[2], r.bssid[3], r.bssid[4], r.bssid[5],
+                 pmfStatusStr(r.pmfStatus));
+        Serial.print(lineBuf);
+        fileBody += lineBuf;
     }
+    writeReconResultFile("pmf", fileBody);
 }
 
 // One tick's worth of the sweep: begin a channel's dwell, or advance past it
@@ -444,12 +484,42 @@ static void finishEnum()
     _ringMode = ReconMode::NONE;
     _enumRunning = false;
     restoreApChannelAndRecover();
-    Serial.printf("[RECON-STA] done: %lu station(s)\n", (unsigned long)_staCount);
+
+    char lineBuf[80];
+    String fileBody;
+    const Recon::ApRecord& target = _aps[_enumApIdx];
+    snprintf(lineBuf, sizeof(lineBuf), "[RECON-STA] begin bssid=%02X:%02X:%02X:%02X:%02X:%02X channel=%u\n",
+             target.bssid[0], target.bssid[1], target.bssid[2],
+             target.bssid[3], target.bssid[4], target.bssid[5], target.channel);
+    fileBody += lineBuf; // already printed live by startEnum() — file gets it too, for a complete record
+    for (uint32_t i = 0; i < _staCount; i++) {
+        const Recon::StaRecord& s = _stas[i];
+        snprintf(lineBuf, sizeof(lineBuf), "[RECON-STA] %02X:%02X:%02X:%02X:%02X:%02X  rssi=%d dBm\n",
+                 s.mac[0], s.mac[1], s.mac[2], s.mac[3], s.mac[4], s.mac[5], s.rssi);
+        fileBody += lineBuf; // already printed live by upsertStation() — not re-printed to serial here
+    }
+    snprintf(lineBuf, sizeof(lineBuf), "[RECON-STA] done: %lu station(s)\n", (unsigned long)_staCount);
+    Serial.print(lineBuf);
+    fileBody += lineBuf;
+    writeReconResultFile("enum", fileBody);
 }
 
+// One tick's worth of the enum dwell. If the attempt ends with 0 stations
+// found and we haven't hit CFG_RECON_ENUM_MAX_ATTEMPTS yet, extend for
+// another full dwell instead of finishing — see config.h for why.
 static void tickEnum()
 {
-    if (millis() - _enumStartMs >= CFG_RECON_ENUM_DWELL_MS) finishEnum();
+    if (millis() - _enumStartMs < CFG_RECON_ENUM_DWELL_MS) return;
+
+    if (_staCount == 0 && _enumAttempt < CFG_RECON_ENUM_MAX_ATTEMPTS) {
+        _enumAttempt++;
+        _enumStartMs = millis();
+        Serial.printf("[RECON-STA] 0 stations after %ums, extending once (attempt %u/%u)...\n",
+                      (unsigned)CFG_RECON_ENUM_DWELL_MS, (unsigned)_enumAttempt,
+                      (unsigned)CFG_RECON_ENUM_MAX_ATTEMPTS);
+        return;
+    }
+    finishEnum();
 }
 
 // Pull the finished async scan into the RAM table, print it to serial (the
@@ -488,20 +558,29 @@ static void harvestScan()
     // Print the AP table FIRST — serial is the authoritative, reliable readout
     // on this hardware (SoftAP TX is unreliable during/after a scan, same
     // reason pcap retrieval uses the serial DUMP path), so it must not depend
-    // on any recovery step that follows.
-    Serial.printf("[RECON] Scan done: %lu AP(s)%s\n",
-                  (unsigned long)_apCount,
-                  n < 0 ? " (scan failed)" : "");
+    // on any recovery step that follows. Also accumulated into fileBody (same
+    // lines, byte-for-byte) for the Phase 2c SD record — see
+    // writeReconResultFile.
+    char lineBuf[200];
+    String fileBody;
+    snprintf(lineBuf, sizeof(lineBuf), "[RECON] Scan done: %lu AP(s)%s\n",
+             (unsigned long)_apCount, n < 0 ? " (scan failed)" : "");
+    Serial.print(lineBuf);
+    fileBody += lineBuf;
     for (uint32_t i = 0; i < _apCount; i++) {
         const Recon::ApRecord& r = _aps[i];
         // pmf= here is still the 2a authmode heuristic (heuristic) — the PMF
         // sweep chained right after this replaces it with confirmed values
         // read from the actual RSN IE (see finishPmfSweep).
-        Serial.printf("[RECON]  %02X:%02X:%02X:%02X:%02X:%02X  ch%-3u %s  %4d dBm  auth=%u  pmf=%s(heuristic)  %s\n",
-                      r.bssid[0], r.bssid[1], r.bssid[2], r.bssid[3], r.bssid[4], r.bssid[5],
-                      r.channel, r.band5 ? "5G  " : "2.4G", r.rssi, r.authmode,
-                      r.pmf ? "capable" : "disabled", r.hidden ? "<hidden>" : r.ssid);
+        snprintf(lineBuf, sizeof(lineBuf),
+                 "[RECON]  %02X:%02X:%02X:%02X:%02X:%02X  ch%-3u %s  %4d dBm  auth=%u  pmf=%s(heuristic)  %s\n",
+                 r.bssid[0], r.bssid[1], r.bssid[2], r.bssid[3], r.bssid[4], r.bssid[5],
+                 r.channel, r.band5 ? "5G  " : "2.4G", r.rssi, r.authmode,
+                 r.pmf ? "capable" : "disabled", r.hidden ? "<hidden>" : r.ssid);
+        Serial.print(lineBuf);
+        fileBody += lineBuf;
     }
+    writeReconResultFile("scan", fileBody);
 
     // Best-effort recovery of the SoftAP after the APSTA sweep. Drop ONLY the
     // STA interface the scan added (return to AP-only) — a light, non-blocking
@@ -648,7 +727,9 @@ bool Recon::startEnum(uint32_t apIndex)
 
     _ringMode = ReconMode::STA_ENUM;
     _staCount = 0;
+    _enumApIdx = apIndex;
     _enumStartMs = millis();
+    _enumAttempt = 1;
     _enumRunning = true;
 
     Serial.printf("[RECON-STA] begin bssid=%02X:%02X:%02X:%02X:%02X:%02X channel=%u\n",

@@ -84,14 +84,32 @@ validation, not a self-test. Two hardware-confirmed limitations, not bugs:
   unmodified retry found it. Likely a channel-settle/traffic-cadence timing
   gap against the 4s dwell (`CFG_RECON_ENUM_DWELL_MS`), not a logic bug — the
   station-address resolution itself is correct (exact MAC match on the
-  successful run). Retry `ENUM` once if it returns 0 before trusting a
-  negative result.
+  successful run). **Fixed in Phase 2c**: `tickEnum()` now retries
+  automatically — if `_staCount==0` when the first dwell elapses, it extends
+  once (`CFG_RECON_ENUM_MAX_ATTEMPTS=2`) before finishing, so worst-case
+  `ENUM` time is ~8s instead of 4s. Hardware-reconfirmed 2026-09-07: a run
+  organically hit 0 on attempt 1, extended, then found the exact expected
+  station MAC on attempt 2 — the retry path itself, not just the underlying
+  logic, is now validated.
 `CFG_RECON_AUTO_PMF_SWEEP` (config.h) gates whether a plain `SCAN` auto-
 chains the PMF sweep — default OFF, so `SCAN` alone is still exactly the
 proven 2a behavior; the sweep's channel-hop-then-recovery path
 (`restoreApChannelAndRecover()`) is now hardware-confirmed safe (no loop
 hang) via the explicit `PMF` command, but the flag is left off pending a
 decision on whether to fold it back into the default `SCAN` flow.
+
+**Phase 2c** (SD persistence): `SCAN`, `PMF`, and `ENUM` each auto-save their
+exact serial output to `SD_RECON_DIR/<scan|pmf|enum>_<millis>.txt` right
+after completing — no flag, since this only touches `Storage::` (already
+hardware-proven via Phase 1's PCAP writer), no new radio calls. Retrieve
+with the existing console `DUMP <file>` command; the saved filename prints
+on a `[RECON] saved -> <name> (DUMP <name> to retrieve)` line (or `SD save
+FAILED -> <name>` if `Storage::ready()` is false). Hardware-validated
+2026-09-07: `DUMP`ed files confirmed byte-for-byte identical to what
+streamed live to serial, for a populated `scan_*.txt`, a populated
+`enum_*.txt` (the organic retry case above), and an empty `enum_*.txt`
+(0-station case, still writes begin/done lines with no station lines,
+correctly capped at 2 attempts — no runaway retries).
 
 ## ⚠️ The ESP32-C5 cannot be a USB keyboard
 USB HID/MSC require a USB-OTG peripheral; in the ESP32 family only the S2/S3 have one.
