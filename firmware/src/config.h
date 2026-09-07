@@ -281,6 +281,14 @@
 #ifndef CFG_RECON_AUTO_PMF_SWEEP
 #define CFG_RECON_AUTO_PMF_SWEEP 0
 #endif
-#define CFG_RECON_ENUM_DWELL_MS  4000  // total dwell for one ENUM <ap-index> pass
+#define CFG_RECON_ENUM_DWELL_MS  4000  // dwell per ENUM <ap-index> attempt
+
+// If an ENUM attempt ends with 0 stations found, tickEnum() extends once for
+// another CFG_RECON_ENUM_DWELL_MS before actually finishing (hardware-
+// observed 2026-09-07: a genuine station was missed on the first dwell and
+// found on an immediate identical retry — a channel-settle/traffic-cadence
+// timing gap, not a logic bug; see AGENTS.md's Module B note). 2 = one
+// retry. Same channel/target, no new esp_wifi calls — just runs longer.
+#define CFG_RECON_ENUM_MAX_ATTEMPTS 2
 
 #endif // LILY_DUCKY_CONFIG_H
