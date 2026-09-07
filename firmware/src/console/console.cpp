@@ -6,6 +6,7 @@
 #include <base64.h>   // core-provided base64::encode(const uint8_t*, size_t) -> String
 #include "config.h"
 #include "storage/storage.h"
+#include "recon/recon.h"
 
 static char _line[80];
 static size_t _lineLen = 0;
@@ -54,10 +55,59 @@ static void handleDump(const String& name)
     Serial.println("DUMP_END");
 }
 
+// `SCAN` — starts the Phase 2a managed AP scan (same Recon::startScan() the
+// REST route /api/recon/scan already calls). Was previously only reachable
+// over REST, which this project's own findings call unreliable — added here
+// so the serial-only validation path (PMF, ENUM) actually has a way to
+// produce the AP table they both depend on. No new radio behavior: this is
+// the exact, already-proven 2a scan.
+static void handleScan()
+{
+    if (!Recon::startScan()) {
+        Serial.println("SCAN_ERROR radio busy");
+    }
+}
+
+// `ENUM <ap-index>` — Phase 2b station enumeration. <ap-index> is a row
+// number into the last SCAN's AP table (0-based, same order as the
+// `[RECON]` scan lines). Kicks off a bounded passive sniff on that AP's
+// channel; results stream as `[RECON-STA]` lines from Recon::tick().
+static void handleEnum(const String& arg)
+{
+    // toInt() returns 0 on anything non-numeric, including "" — a bad index
+    // (like "0" when there are no APs, or an out-of-range one) is already
+    // rejected by Recon::startEnum() itself, so no separate parse-error path.
+    long idx = arg.toInt();
+    if (idx < 0) {
+        Serial.println("ENUM_ERROR invalid index");
+        return;
+    }
+    if (!Recon::startEnum((uint32_t)idx)) {
+        Serial.println("ENUM_ERROR radio busy or index out of range");
+    }
+}
+
+// `PMF` — explicit Phase 2b PMF sweep trigger (CFG_RECON_AUTO_PMF_SWEEP is
+// OFF by default, so a plain SCAN no longer chains this — see config.h).
+// Sweeps the channels from the last completed SCAN's AP table; results
+// stream as `[RECON]` lines from Recon::tick(), same as an auto-chained one.
+static void handlePmf()
+{
+    if (!Recon::startPmfSweep()) {
+        Serial.println("PMF_ERROR radio busy or no scan results yet");
+    }
+}
+
 static void dispatch(const String& line)
 {
     if (line.startsWith("DUMP ")) {
         handleDump(line.substring(5));
+    } else if (line == "SCAN") {
+        handleScan();
+    } else if (line.startsWith("ENUM ")) {
+        handleEnum(line.substring(5));
+    } else if (line == "PMF") {
+        handlePmf();
     }
     // Unrecognized lines are ignored — this console shares the port with
     // the normal boot/status log, so silently ignoring stray input (rather

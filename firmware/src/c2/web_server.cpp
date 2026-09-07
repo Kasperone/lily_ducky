@@ -473,8 +473,8 @@ static String jsonEscape(const char* s)
 static void handleReconScanStart()
 {
     if (!authOk()) return;
-    if (Recon::scanning() || Recon::capturing()) {
-        _server.send(409, "text/plain", "Scan or capture already running");
+    if (Recon::busy()) {
+        _server.send(409, "text/plain", "Recon radio already busy");
         return;
     }
     // Send the ack BEFORE the sweep starts. Once WiFi.scanNetworks() begins the
@@ -508,7 +508,54 @@ static void handleReconScanResults()
         j += ",\"band\":\""; j += r->band5 ? "5" : "2.4"; j += "\"";
         j += ",\"rssi\":" + String(r->rssi);
         j += ",\"authmode\":" + String(r->authmode);
-        j += ",\"pmf\":"; j += r->pmf ? "true" : "false";
+        j += ",\"pmf\":"; j += r->pmf ? "true" : "false"; // 2a heuristic, kept for back-compat
+        j += ",\"pmfStatus\":\"";
+        switch (r->pmfStatus) {
+            case Recon::PmfStatus::NOT_PROTECTED: j += "disabled"; break;
+            case Recon::PmfStatus::CAPABLE:  j += "capable";  break;
+            case Recon::PmfStatus::REQUIRED: j += "required"; break;
+            default:                         j += "unknown";  break;
+        }
+        j += "\"";
+        j += "}";
+    }
+    j += "]}";
+    _server.send(200, "application/json", j);
+}
+
+// ── Recon station enum (Module B, Phase 2b) ─────────────────────────────────
+// POST /api/recon/enum/{index} starts a bounded passive sniff on the AP at
+// that row of the last scan's table; GET /api/recon/enum returns the table
+// found so far. Additive/best-effort like the rest of the REST surface —
+// serial's [RECON-STA] lines are the reliable readout (see console.h).
+static void handleReconEnumStart()
+{
+    if (!authOk()) return;
+    String idxStr = _server.pathArg(0);
+    long idx = idxStr.toInt();
+    if (idx < 0 || !Recon::startEnum((uint32_t)idx)) {
+        _server.send(409, "text/plain", "Recon radio busy or index out of range");
+        return;
+    }
+    _server.send(200, "application/json", "{\"enumerating\":true}");
+}
+
+static void handleReconEnumResults()
+{
+    char mac[18];
+    String j = "{\"enumerating\":";
+    j += Recon::enumRunning() ? "true" : "false";
+    j += ",\"count\":" + String(Recon::staCount());
+    j += ",\"stations\":[";
+    for (uint32_t i = 0; i < Recon::staCount(); i++) {
+        const Recon::StaRecord* s = Recon::staRecord(i);
+        if (!s) break;
+        snprintf(mac, sizeof(mac), "%02X:%02X:%02X:%02X:%02X:%02X",
+                 s->mac[0], s->mac[1], s->mac[2], s->mac[3], s->mac[4], s->mac[5]);
+        if (i) j += ",";
+        j += "{\"mac\":\"" + String(mac) + "\"";
+        j += ",\"rssi\":" + String(s->rssi);
+        j += ",\"lastSeenMs\":" + String(s->lastSeenMs);
         j += "}";
     }
     j += "]}";
@@ -617,6 +664,8 @@ bool C2Server::start()
     _server.on("/api/recon/scan", HTTP_POST, handleReconScanStart);
     _server.on("/api/recon/scan", HTTP_GET, handleReconScanResults);
     _server.on(UriBraces("/api/recon/pcap/{}"), HTTP_GET, handleReconGetPcap);
+    _server.on(UriBraces("/api/recon/enum/{}"), HTTP_POST, handleReconEnumStart);
+    _server.on("/api/recon/enum", HTTP_GET, handleReconEnumResults);
     _server.onNotFound(handleNotFound);
 
     // Without this the `WebServer` class drops non-standard request headers,

@@ -25,6 +25,11 @@ namespace Recon {
     void stopCapture();
     bool capturing();
 
+    // True while any mode (capture, scan, PMF sweep, or station enum) owns
+    // the radio — everything that starts a new mode should refuse while this
+    // is true, since there is only one radio.
+    bool busy();
+
     // Drains the ring buffer into the open PCAP file. Call every loop().
     void tick();
 
@@ -34,6 +39,11 @@ namespace Recon {
     const char* currentFile();  // empty string when not capturing
 
     // ── Phase 2a: dual-band AP scan / enumeration ──────────────────────────
+    // Real PMF status parsed from a beacon/probe-resp RSN IE (Phase 2b).
+    // UNKNOWN until a PMF sweep has actually seen and parsed this BSSID's
+    // RSN IE; falls back to ApRecord::pmf's authmode heuristic until then.
+    enum class PmfStatus : uint8_t { UNKNOWN = 0, NOT_PROTECTED = 1, CAPABLE = 2, REQUIRED = 3 };
+
     // One access point as seen by a managed scan.
     struct ApRecord {
         uint8_t bssid[6];
@@ -44,6 +54,14 @@ namespace Recon {
         int8_t  rssi;           // dBm
         uint8_t authmode;       // wifi_auth_mode_t
         bool    pmf;            // best-effort in 2a (WPA3 => PMF); reliable parse is 2b
+        PmfStatus pmfStatus;    // 2b: real MFPC/MFPR from the RSN IE; UNKNOWN until swept
+    };
+
+    // One associated station as seen by Phase 2b's passive per-AP enum pass.
+    struct StaRecord {
+        uint8_t  mac[6];
+        int8_t   rssi;          // dBm at last sighting
+        uint32_t lastSeenMs;    // millis() at last sighting
     };
 
     // Kicks off an async managed scan across the channels the current band
@@ -57,6 +75,26 @@ namespace Recon {
     uint32_t apCount();                    // APs found by the last completed scan
     const ApRecord* apRecord(uint32_t i);  // nullptr if i is out of range
     uint32_t lastScanMillis();             // millis() at last scan completion (0 = none)
+
+    // ── Phase 2b: RSN-IE PMF sweep + station enumeration ────────────────────
+    // Sweeps the channels from the last completed scan's AP table, hopping
+    // each to catch a beacon/probe-resp and parse its RSN IE. Auto-chained
+    // after startScan() only when CFG_RECON_AUTO_PMF_SWEEP is set (default
+    // OFF — see config.h); otherwise call this explicitly (console `PMF`
+    // command). Fails if the radio is busy or the last scan found no APs.
+    // pmfSweeping() polls it; results land in ApRecord::pmfStatus in place.
+    bool startPmfSweep();
+    bool pmfSweeping();
+
+    // Station enum is manual: pass the index of an AP from the last scan
+    // (apRecord(i)). Passively listens on that AP's channel for Data frames
+    // to/from its BSSID for CFG_RECON_ENUM_DWELL_MS and builds a dedup table
+    // of the station MACs seen. Fails if the radio is busy (capture/scan/
+    // sweep/another enum already running) or apIndex is out of range.
+    bool startEnum(uint32_t apIndex);
+    bool enumRunning();
+    uint32_t staCount();                     // stations found by the last completed enum
+    const StaRecord* staRecord(uint32_t i);  // nullptr if i is out of range
 
 } // namespace Recon
 
