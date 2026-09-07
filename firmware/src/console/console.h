@@ -1,7 +1,7 @@
 // =============================================================================
 // console/console.h — tiny serial command interface (USB-CDC console)
 // =============================================================================
-// Four commands:
+// Five commands:
 //   DUMP <file>   — base64-dumps a file from SD_RECON_DIR to Serial, wrapped
 //                    in DUMP_BEGIN/DUMP_END markers. Exists to pull recon
 //                    captures off the SD card over the wired USB-CDC link
@@ -21,6 +21,14 @@
 //   ENUM <index>  — Phase 2b station enumeration for AP <index> from the
 //                    last SCAN's table (see recon/recon.h). Results stream
 //                    as [RECON-STA] lines.
+//   PMFDOWN       — investigation-gated: tears the SoftAP down, sweeps every
+//                    channel from the last SCAN (including DFS channels PMF
+//                    can't reach with the AP up), then restores the SoftAP.
+//                    Explicit-only, never auto-triggered — SCAN/PMF's AP-up
+//                    paths are completely unaffected. See recon/recon.h and
+//                    AGENTS.md's Module B note for the root-cause analysis
+//                    behind this design (deferred/tick-based, settling
+//                    delays, narrowest primitives).
 //
 // No auth on these commands: Serial access is already this firmware's
 // trust boundary — the C2 auth token itself is only ever printed here,

@@ -73,11 +73,23 @@ static uint32_t _enumApIdx = 0;   // for finishEnum() to re-derive the target's 
 static uint32_t _enumStartMs = 0;
 static uint8_t _enumAttempt = 0;  // 1-based; tickEnum() extends the dwell once if _staCount==0 (see config.h)
 
+// ── AP-down DFS-capable PMF sweep state (investigation-gated) ──────────────
+// Orchestration layer around the EXISTING PMF sweep primitives (startPmfSweepInternal/
+// tickPmfSweep/finishPmfSweep, all unchanged) — teardown and restore are the
+// only new mechanics. See recon.h and tickApDownSweep() for the full sequence.
+enum class ApDownPhase : uint8_t {
+    NONE, TEARDOWN_PENDING, SETTLING_AFTER_TEARDOWN, SWEEPING,
+    SETTLING_AFTER_SWEEP, RESTORE_PENDING
+};
+static ApDownPhase _apDownPhase = ApDownPhase::NONE;
+static uint32_t _apDownSettleStartMs = 0;
+
 // True while any mode already owns the single radio — every start* function
 // must check this before touching WiFi/esp_wifi state.
 static bool radioBusy()
 {
-    return _capturing || _scanning || _pmfSweeping || _enumRunning;
+    return _capturing || _scanning || _pmfSweeping || _enumRunning ||
+           _apDownPhase != ApDownPhase::NONE;
 }
 
 bool Recon::busy() { return radioBusy(); }
@@ -458,6 +470,86 @@ static void tickPmfSweep()
     }
 }
 
+// ── AP-down DFS-capable PMF sweep: orchestration around the SAME sweep
+// primitives above (startPmfSweepInternal/tickPmfSweep/finishPmfSweep are
+// completely unchanged — this only adds the teardown/settle/restore-signal
+// steps around them). Every phase transition happens on a LATER tick(), never
+// synchronously with the one that decided to transition — that deferred-
+// execution + settling-delay pattern is the mitigation the root-cause
+// investigation concluded was missing from the code that hung before (see
+// config.h and AGENTS.md's Module B note). Teardown brings STA up FIRST, then
+// drops the AP (WiFi.enableSTA(true) + WiFi.enableAP(false)) — same narrow
+// primitive class as the already-proven enableSTA(false), not the heavier
+// WiFi.softAP() chain. Order is load-bearing: dropping the AP while it's the
+// only interface lands the driver in WIFI_MODE_NULL, which esp_wifi_stop()s
+// the radio — the promiscuous sweep then hops channels over a dead radio and
+// confirms 0 APs (hardware-observed 2026-09-07). Enabling STA first keeps the
+// mode at WIFI_MODE_STA (radio started), which both feeds the promiscuous RX
+// and — being a non-AP mode — lets esp_wifi_set_channel() reach the DFS
+// channels the AP-up sweep is refused ("not allowed in ap mode"), the whole
+// point of this path. The transient STA is dropped again by the existing
+// finishPmfSweep() -> restoreApChannelAndRecover() (enableSTA(false)) before
+// restore. The restore call is intentionally NOT made
+// here (see recon.h: Recon doesn't depend on c2/web_server.h) — this only
+// ever reaches RESTORE_PENDING and waits; main.cpp's loop() is responsible
+// for actually calling C2Server::restartSoftAp() and then notifyApRestored().
+static void tickApDownSweep()
+{
+    switch (_apDownPhase) {
+        case ApDownPhase::TEARDOWN_PENDING:
+            Serial.println("[RECON] AP-down sweep: tearing down SoftAP (STA-only, radio stays up)...");
+            WiFi.enableSTA(true);   // bring STA up FIRST so the next line lands us in
+                                    // WIFI_MODE_STA (radio started) — NOT WIFI_MODE_NULL,
+                                    // which esp_wifi_stop()s the radio and makes the
+                                    // promiscuous sweep capture nothing (see comment above)
+            WiFi.enableAP(false);   // drop the AP; DFS channels are settable outside ap mode
+            Serial.println("[RECON] AP-down sweep: SoftAP down, STA-only");
+            _apDownSettleStartMs = millis();
+            _apDownPhase = ApDownPhase::SETTLING_AFTER_TEARDOWN;
+            break;
+
+        case ApDownPhase::SETTLING_AFTER_TEARDOWN:
+            if (millis() - _apDownSettleStartMs >= CFG_RECON_APDOWN_SETTLE_MS) {
+                Serial.println("[RECON] AP-down sweep: settled, starting DFS-capable PMF sweep...");
+                // startPmfSweepInternal() reads the last scan's channel list as-is —
+                // it was already DFS-agnostic; only the AP-mode restriction blocked
+                // DFS channels before, and AP is down now, so no changes needed there.
+                if (startPmfSweepInternal()) {
+                    _apDownPhase = ApDownPhase::SWEEPING;
+                } else {
+                    Serial.println("[RECON] AP-down sweep: nothing to sweep (empty scan) — restoring");
+                    _apDownPhase = ApDownPhase::RESTORE_PENDING;
+                }
+            }
+            break;
+
+        case ApDownPhase::SWEEPING:
+            // tickPmfSweep() already ran earlier this same tick() (see Recon::tick()'s
+            // ordering) — if it just finished, _pmfSweeping is false by now.
+            if (!_pmfSweeping) {
+                Serial.println("[RECON] AP-down sweep: sweep done, settling before SoftAP restore...");
+                _apDownSettleStartMs = millis();
+                _apDownPhase = ApDownPhase::SETTLING_AFTER_SWEEP;
+            }
+            break;
+
+        case ApDownPhase::SETTLING_AFTER_SWEEP:
+            if (millis() - _apDownSettleStartMs >= CFG_RECON_APDOWN_SETTLE_MS) {
+                Serial.println("[RECON] AP-down sweep: settled, ready to restore SoftAP");
+                _apDownPhase = ApDownPhase::RESTORE_PENDING;
+            }
+            break;
+
+        case ApDownPhase::RESTORE_PENDING:
+            // Waiting for main.cpp to notice apRestorePending() and call
+            // C2Server::restartSoftAp() + notifyApRestored(). Nothing to do here.
+            break;
+
+        default:
+            break;
+    }
+}
+
 // ── Phase 2b: station enumeration ───────────────────────────────────────────
 static void upsertStation(const uint8_t mac[6], int8_t rssi)
 {
@@ -662,6 +754,9 @@ void Recon::tick()
 
     if (_pmfSweeping) tickPmfSweep();
     if (_enumRunning) tickEnum();
+    // Runs AFTER tickPmfSweep() above so the SWEEPING phase sees this tick's
+    // own sweep-completion, not last tick's — see tickApDownSweep().
+    if (_apDownPhase != ApDownPhase::NONE) tickApDownSweep();
 }
 
 uint32_t Recon::packetCount() { return _packetCount; }
@@ -741,3 +836,22 @@ bool Recon::startEnum(uint32_t apIndex)
 bool Recon::enumRunning() { return _enumRunning; }
 uint32_t Recon::staCount() { return _staCount; }
 const Recon::StaRecord* Recon::staRecord(uint32_t i) { return i < _staCount ? &_stas[i] : nullptr; }
+
+// ── AP-down DFS-capable PMF sweep (public entry points) ─────────────────────
+bool Recon::startPmfSweepApDown()
+{
+    if (radioBusy()) return false;
+    if (_apCount == 0) return false; // nothing scanned yet — SCAN first
+    _apDownPhase = ApDownPhase::TEARDOWN_PENDING;
+    Serial.println("[RECON] AP-down PMF sweep requested — acting next tick");
+    return true;
+}
+
+bool Recon::apRestorePending() { return _apDownPhase == ApDownPhase::RESTORE_PENDING; }
+
+void Recon::notifyApRestored()
+{
+    if (_apDownPhase != ApDownPhase::RESTORE_PENDING) return; // ignore stray calls
+    Serial.println("[RECON] AP-down PMF sweep complete — SoftAP restore call returned");
+    _apDownPhase = ApDownPhase::NONE;
+}

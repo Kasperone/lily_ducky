@@ -96,6 +96,25 @@ namespace Recon {
     uint32_t staCount();                     // stations found by the last completed enum
     const StaRecord* staRecord(uint32_t i);  // nullptr if i is out of range
 
+    // ── AP-down DFS-capable PMF sweep (investigation-gated, console
+    // `PMFDOWN` only — never auto-triggered; SCAN/PMF's AP-up paths are
+    // completely unaffected). Tears the SoftAP down, sweeps every channel
+    // the last scan found (including DFS channels the AP-up PMF sweep can't
+    // reach), then signals for the SoftAP to be restored. Deferred/tick-
+    // based throughout — see recon.cpp's tickApDownSweep() for the full
+    // phase sequence and config.h for the settling-delay rationale.
+    //
+    // Recon deliberately does NOT depend on c2/web_server.h (one-way
+    // dependency: c2 depends on recon, not the reverse), so it cannot call
+    // the actual SoftAP restore (C2Server::restartSoftAp()) itself. Instead:
+    // main.cpp's loop() must poll apRestorePending() every tick and, when
+    // true, call C2Server::restartSoftAp() itself (the one never-fully-
+    // proven call — this is where a hang would manifest, same as before)
+    // and then call notifyApRestored() so Recon can finish its own sequence.
+    bool startPmfSweepApDown();
+    bool apRestorePending();  // true for main.cpp to act on; see above
+    void notifyApRestored();  // main.cpp calls this right after restartSoftAp() returns
+
 } // namespace Recon
 
 #endif

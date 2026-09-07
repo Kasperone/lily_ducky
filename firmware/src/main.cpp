@@ -210,6 +210,21 @@ void loop()
     // Drain any captured recon frames to SD (no-op when not capturing)
     Recon::tick();
 
+    // AP-down DFS-capable PMF sweep (console PMFDOWN, investigation-gated):
+    // Recon can't call C2Server::restartSoftAp() itself (one-way module
+    // dependency — c2 depends on recon, not the reverse), so main.cpp does
+    // it on Recon's behalf once Recon::tick() above has finished settling
+    // and signals it's time. This is the one call the AP-restore root-cause
+    // investigation never fully proved safe (see AGENTS.md's Module B note)
+    // — bracketed with its own markers here, on top of startSoftApRadio()'s
+    // own "Starting SoftAP..."/" OK" bracket, so a stall is unambiguous.
+    if (Recon::apRestorePending()) {
+        Serial.println("[MAIN] AP-down sweep: restoring SoftAP now...");
+        C2Server::restartSoftAp();
+        Serial.println("[MAIN] AP-down sweep: SoftAP restore call returned");
+        Recon::notifyApRestored();
+    }
+
     // Serial console commands (e.g. DUMP <file> — see console/console.h)
     Console::tick();
 
