@@ -529,3 +529,32 @@ re-sends), so it's a sub-visible transient, not a stuck wrong colour. If it ever
 becomes visible: call `Hal::ledRefresh()` after `Storage::` bus operations too,
 or centralise all shared-bus access behind one wrapper that refreshes the LED on
 exit. Low priority; left as-is because the visible symptom is nil today.
+
+## 8. Intermittent boot panic on the C5 — OPEN (added 2026-09-07), tracked in issue #18
+
+Seen during Phase 2d (AP-down PMF / PMFDOWN) bring-up on `/dev/ttyACM0`: about
+**1 in ~4 app-resets** panicked at boot (CPU register dump + stack backtrace)
+instead of printing the normal banner; the other resets booted cleanly and the
+panic did not recur once settled. It reproduced on **both** the pre-fix and
+post-fix Phase 2d images, so it is **not** caused by the AP-down PMF work — it
+reads as a pre-existing early-init instability, surfaced here only because this
+session reset the board many times in a row.
+
+**Evidence.** Panic boot reached HAL + SD init (`[SD] OK: SD (30436.5 MB)`) then
+dumped registers/stack; the serial port then dropped (`Resource temporarily
+unavailable` = USB CDC re-enumerated). The immediately-following reset, same
+firmware, booted clean through `[C2] Starting SoftAP... OK — 192.168.4.1` →
+`[MAIN] Boot complete`.
+
+**Lead / caution.** `E (…) MSPI Timing: Failed to allocate dummy cacheline for
+PSRAM memory barrier!` prints on **every** boot, clean ones included — so it is
+probably *not* the panic trigger despite being the scariest-looking line; don't
+over-rotate on it (cf. #1's "backlight washes the LED white" red herring). The
+fault is early (around/after HAL+SD, before/at WiFi C2 start), consistent with
+PSRAM/MSPI init timing rather than anything in the recon/PMF path. Next step: a
+decoded backtrace — build with symbols and run several raw dumps through the
+`esp32c5` exception decoder / `addr2line` to localize the faulting frame.
+
+**Severity: low, non-blocking.** Device recovers on the next reset and runs
+normally (Phase 2d validated fine across it). Full write-up and repro in
+issue #18.
