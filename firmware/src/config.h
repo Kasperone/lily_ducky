@@ -258,4 +258,29 @@
 #define CFG_RECON_SCAN_MAX_APS   32   // AP table capacity (RAM-resident)
 #define CFG_RECON_SCAN_DWELL_MS  300  // max dwell per channel during the sweep
 
+// ── WiFi Recon / RSN-IE PMF + station enum (Module B, Phase 2b) ────────────
+// Both reuse the Phase 1 ring-buffer/promiscuous-callback/tick() pipeline
+// with explicit esp_wifi_set_channel() hops of our own — deliberately NOT
+// stacked on WiFi.scanNetworks()'s async channel-hop (that combination is
+// untested, and 2a already found a full SoftAP re-init hang the main loop
+// from the scan-complete path). Run sequentially after a managed scan
+// completes, never concurrently with one.
+#define CFG_RECON_PMF_DWELL_MS   250   // per-channel dwell while sweeping for beacons/probe-resps
+#define CFG_RECON_MAX_STAS       16    // station table capacity (RAM-resident)
+
+// Whether a plain SCAN auto-chains the PMF sweep once it completes. Default
+// OFF: the sweep's channel-hop-then-restoreApChannelAndRecover() path is
+// now hardware-confirmed safe (2026-09-07, via the explicit `PMF` console
+// command — no loop hang, see AGENTS.md's Module B note; channel-hop
+// recovery is exactly what hung the main loop once before in 2a-era code,
+// see harvestScan's AP-recovery comment, so this was worth confirming
+// separately rather than assuming). Left OFF anyway, pending a decision on
+// whether to fold it back into the default SCAN flow — with it off, SCAN
+// stays byte-for-byte the proven 2a path, and PMF only runs when explicitly
+// requested (console `PMF` command / Recon::startPmfSweep()).
+#ifndef CFG_RECON_AUTO_PMF_SWEEP
+#define CFG_RECON_AUTO_PMF_SWEEP 0
+#endif
+#define CFG_RECON_ENUM_DWELL_MS  4000  // total dwell for one ENUM <ap-index> pass
+
 #endif // LILY_DUCKY_CONFIG_H

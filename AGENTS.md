@@ -58,6 +58,41 @@ compile-verified only — no hardware acquired (its LED is on dedicated pins
 40/39, bit-banged, unverified).
 Phase 4 security bypass features implemented (OS detect, layouts, VID/PID, jitter, exfil, ATTACKMODE) — S3 target only, unverified on hardware (no S3 board).
 
+**WiFi Recon (Module B), C5 only** — `firmware/src/recon/`, `firmware/src/console/`.
+Phase 1 (EAPOL/mgmt capture → PCAP on SD) and Phase 2a (dual-band managed AP
+scan/enum) are merged and hardware-verified (PRs #11, #14). Phase 2b (RSN-IE
+PMF parsing + station enumeration) adds two new serial console commands —
+`PMF` and `ENUM <ap-index>` — plus a `SCAN` command that was missing
+entirely before this (Phase 2a's scan was REST-only, `/api/recon/scan`,
+which this project has separately found unreliable; serial is the trusted
+readout for all of Module B, see `console/console.h`). All three commands
+are hardware-validated (2026-09-07, live RF environment, `/dev/ttyACM0`):
+`SCAN` found 23 real APs, `PMF` confirmed 10/23 via real RSN-IE parsing, and
+`ENUM` returned an exact station-MAC match against a client on a separate,
+external lab AP (not the C5's own SoftAP) — genuine passive-sniffer
+validation, not a self-test. Two hardware-confirmed limitations, not bugs:
+- **PMF sweep can't confirm APs on a DFS channel.** `esp_wifi_set_channel()`
+  refuses 5GHz DFS channels (UNII-2, e.g. 52/60) while the SoftAP is active
+  (`"Set channel to a DFS channel is not allowed in ap mode"`) — the driver
+  logs an error and the sweep continues, but that AP's `PmfStatus` stays
+  `UNKNOWN` permanently. Weak-signal APs whose beacon doesn't land inside the
+  250ms per-channel dwell (`CFG_RECON_PMF_DWELL_MS`) stay `UNKNOWN` for the
+  same reason — this is why a live scan of 23 APs only confirmed 10.
+- **A single `ENUM` pass isn't guaranteed to catch a station on the first
+  try.** Observed on hardware: one run returned `done: 0 station(s)` against
+  an AP with a client actively transmitting the whole time; an immediate,
+  unmodified retry found it. Likely a channel-settle/traffic-cadence timing
+  gap against the 4s dwell (`CFG_RECON_ENUM_DWELL_MS`), not a logic bug — the
+  station-address resolution itself is correct (exact MAC match on the
+  successful run). Retry `ENUM` once if it returns 0 before trusting a
+  negative result.
+`CFG_RECON_AUTO_PMF_SWEEP` (config.h) gates whether a plain `SCAN` auto-
+chains the PMF sweep — default OFF, so `SCAN` alone is still exactly the
+proven 2a behavior; the sweep's channel-hop-then-recovery path
+(`restoreApChannelAndRecover()`) is now hardware-confirmed safe (no loop
+hang) via the explicit `PMF` command, but the flag is left off pending a
+decision on whether to fold it back into the default `SCAN` flow.
+
 ## ⚠️ The ESP32-C5 cannot be a USB keyboard
 USB HID/MSC require a USB-OTG peripheral; in the ESP32 family only the S2/S3 have one.
 Two independent reasons block it on the C5, either one sufficient:
