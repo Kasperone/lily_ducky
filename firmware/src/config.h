@@ -291,4 +291,19 @@
 // retry. Same channel/target, no new esp_wifi calls — just runs longer.
 #define CFG_RECON_ENUM_MAX_ATTEMPTS 2
 
+// ── WiFi Recon / AP-down DFS-capable PMF sweep (investigation-gated) ───────
+// Explicit-only (console `PMFDOWN`), never auto-triggered — SCAN and PMF's
+// AP-up paths are completely unchanged by this. Tears the SoftAP down (so
+// esp_wifi_set_channel() can reach DFS channels — that refusal is an AP-mode
+// restriction, see the DFS note elsewhere in this file), sweeps, restores.
+// Root-cause investigation (2026-09-07, see AGENTS.md's Module B note)
+// concluded the prior restartSoftAp()-from-scan-complete hang is most
+// consistent with a driver-internal race between the just-finished async
+// scan's own cleanup and an immediate, heavyweight esp_wifi control-plane
+// call with no settling gap — NOT simply "any WiFi.softAP() call is
+// dangerous." This settling delay is the single most load-bearing part of
+// that mitigation — do not shorten it without re-running the hardware
+// validation that justified the current value.
+#define CFG_RECON_APDOWN_SETTLE_MS 300 // after teardown, and again after the sweep
+
 #endif // LILY_DUCKY_CONFIG_H

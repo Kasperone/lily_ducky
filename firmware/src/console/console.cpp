@@ -98,6 +98,18 @@ static void handlePmf()
     }
 }
 
+// `PMFDOWN` — investigation-gated AP-down DFS-capable PMF sweep. Tears the
+// SoftAP down, sweeps every channel from the last SCAN (including DFS
+// channels PMF can't reach with the AP up), then restores the SoftAP.
+// Explicit-only, never auto-triggered — PMF/SCAN's AP-up paths are
+// unaffected by this existing. See recon.h and AGENTS.md's Module B note.
+static void handlePmfDown()
+{
+    if (!Recon::startPmfSweepApDown()) {
+        Serial.println("PMFDOWN_ERROR radio busy or no scan results yet");
+    }
+}
+
 static void dispatch(const String& line)
 {
     if (line.startsWith("DUMP ")) {
@@ -106,6 +118,8 @@ static void dispatch(const String& line)
         handleScan();
     } else if (line.startsWith("ENUM ")) {
         handleEnum(line.substring(5));
+    } else if (line == "PMFDOWN") {
+        handlePmfDown();
     } else if (line == "PMF") {
         handlePmf();
     }
