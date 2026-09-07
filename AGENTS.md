@@ -70,14 +70,18 @@ are hardware-validated (2026-09-07, live RF environment, `/dev/ttyACM0`):
 `SCAN` found 23 real APs, `PMF` confirmed 10/23 via real RSN-IE parsing, and
 `ENUM` returned an exact station-MAC match against a client on a separate,
 external lab AP (not the C5's own SoftAP) — genuine passive-sniffer
-validation, not a self-test. Two hardware-confirmed limitations, not bugs:
-- **PMF sweep can't confirm APs on a DFS channel.** `esp_wifi_set_channel()`
-  refuses 5GHz DFS channels (UNII-2, e.g. 52/60) while the SoftAP is active
-  (`"Set channel to a DFS channel is not allowed in ap mode"`) — the driver
-  logs an error and the sweep continues, but that AP's `PmfStatus` stays
-  `UNKNOWN` permanently. Weak-signal APs whose beacon doesn't land inside the
-  250ms per-channel dwell (`CFG_RECON_PMF_DWELL_MS`) stay `UNKNOWN` for the
-  same reason — this is why a live scan of 23 APs only confirmed 10.
+validation, not a self-test. Two hardware-confirmed constraints found here
+(the first since **resolved by Phase 2d** — see below), not bugs:
+- **The AP-up PMF sweep can't confirm APs on a DFS channel.**
+  `esp_wifi_set_channel()` refuses 5GHz DFS channels (UNII-2, e.g. 52/60)
+  while the SoftAP is active (`"Set channel to a DFS channel is not allowed in
+  ap mode"`) — the driver logs an error and the sweep continues, but that AP's
+  `PmfStatus` stays `UNKNOWN` for that sweep. **Phase 2d's `PMFDOWN` lifts
+  this**: it drops out of AP mode first, so DFS channels become settable and
+  get real `pmf=` values (see Phase 2d below). Weak-signal APs whose beacon
+  doesn't land inside the 250ms per-channel dwell (`CFG_RECON_PMF_DWELL_MS`)
+  still stay `UNKNOWN` — that, plus DFS pre-2d, is why an early live scan of
+  23 APs only confirmed 10.
 - **A single `ENUM` pass isn't guaranteed to catch a station on the first
   try.** Observed on hardware: one run returned `done: 0 station(s)` against
   an AP with a client actively transmitting the whole time; an immediate,
@@ -110,6 +114,36 @@ streamed live to serial, for a populated `scan_*.txt`, a populated
 `enum_*.txt` (the organic retry case above), and an empty `enum_*.txt`
 (0-station case, still writes begin/done lines with no station lines,
 correctly capped at 2 attempts — no runaway retries).
+
+**Phase 2d** (AP-down DFS-capable PMF sweep, PR #17): adds the `PMFDOWN`
+console command — tears the SoftAP down, runs the *existing* PMF sweep across
+all scanned channels (now including the 5GHz DFS channels the AP-up `PMF`
+sweep is refused on, per the first constraint above), then restores the
+SoftAP. Fully opt-in; plain `SCAN`/`PMF` are untouched.
+- **Root cause + fix (the Module B hang/teardown note code comments point
+  here for).** Teardown brings STA up *before* dropping the AP
+  (`WiFi.enableSTA(true)` then `WiFi.enableAP(false)`), so the radio stays in
+  `WIFI_MODE_STA` (started). Order is load-bearing: dropping the AP as the
+  *sole* interface lands in `WIFI_MODE_NULL`, which `esp_wifi_stop()`s the
+  radio — the first hardware run then swept over a dead radio and confirmed
+  **0/28**. STA is also a non-AP mode, so DFS channels become settable. The
+  historically hang-prone teardown/restore is kept off the callback path: a
+  deferred tick-based `ApDownPhase` state machine with 300ms settles after
+  teardown and after the sweep (`CFG_RECON_APDOWN_SETTLE_MS`); the one
+  `C2Server::restartSoftAp()` call lives in `main.cpp`'s `loop()` (Recon can't
+  depend on `c2/web_server.h`) and is bracketed with serial markers so a stall
+  is unambiguous.
+- **Hardware-validated 2026-09-07** (`/dev/ttyACM0`, serial ground truth):
+  no hang, SoftAP restores (`OK — 192.168.4.1`), loop alive (a follow-up
+  `SCAN` completed), **25/31 confirmed** (was 0/28 pre-fix), a DFS ch52 AP now
+  reads `pmf=capable`, no `not allowed in ap mode` errors during the AP-down
+  sweep, and results persist to SD (`pmf_*.txt`, Phase 2c reuse). The 6
+  unconfirmed APs were all −97…−100 dBm (too weak for a beacon in the 250ms
+  dwell), not a defect.
+- **Unrelated observation, tracked separately:** an intermittent boot panic
+  (~1 in 4 app-resets, register/stack dump) surfaced during this bring-up. It
+  predates 2d (reproduced on both pre- and post-fix images) and self-recovers
+  on the next reset — see `open-questions.md` #8 and issue #18.
 
 ## ⚠️ The ESP32-C5 cannot be a USB keyboard
 USB HID/MSC require a USB-OTG peripheral; in the ESP32 family only the S2/S3 have one.
