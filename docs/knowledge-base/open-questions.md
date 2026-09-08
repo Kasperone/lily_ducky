@@ -530,7 +530,7 @@ becomes visible: call `Hal::ledRefresh()` after `Storage::` bus operations too,
 or centralise all shared-bus access behind one wrapper that refreshes the LED on
 exit. Low priority; left as-is because the visible symptom is nil today.
 
-## 8. Intermittent boot panic on the C5 — OPEN (added 2026-09-07), tracked in issue #18
+## 8. Intermittent cold-boot panic on the C5 — RESOLVED 2026-09-08 (from-source build); issue #18
 
 Seen during Phase 2d (AP-down PMF / PMFDOWN) bring-up on `/dev/ttyACM0`: about
 **1 in ~4 app-resets** panicked at boot (CPU register dump + stack backtrace)
@@ -558,3 +558,39 @@ decoded backtrace — build with symbols and run several raw dumps through the
 **Severity: low, non-blocking.** Device recovers on the next reset and runs
 normally (Phase 2d validated fine across it). Full write-up and repro in
 issue #18.
+
+> **RESOLUTION (2026-09-08, live hardware, `/dev/ttyACM0`).** Root-caused and
+> fixed. The trail:
+> - **Reproduction sharpened:** the panic is a **cold-boot** phenomenon. On a
+>   true power-cycle (physical unplug → cool → replug) the precompiled build
+>   panics *repeatedly*, producing a visible **reboot loop** (LCD/LED flashing)
+>   until timing settles into a clean boot; warm RTS resets almost never trigger
+>   it (0 in ~75 warm resets). The dump was uncapturable from the guest: the
+>   USB-Serial-JTAG re-enumerates on every reboot, so the loop's dumps scroll
+>   past before the port re-attaches — the capture only ever caught the settled
+>   clean boot.
+> - **PSRAM ruled out.** The scary every-boot MSPI cacheline line was a red
+>   herring (as warned above). Disabling SPIRAM (`CONFIG_SPIRAM=n`) removed that
+>   line but the cold reboot loop **persisted** — so marginal PSRAM timing was
+>   not the cause. (Disabling SPIRAM also regressed WiFi init, `0x3001`, so it
+>   is not a usable change anyway; PSRAM stays on.)
+> - **Localized to the precompiled core.** The from-source and precompiled
+>   sdkconfigs are byte-identical (0 deltas but SPIRAM), yet a **from-source**
+>   build of the *same* config (fresh IDF 5.5.5) does **not** reproduce the loop
+>   — ~15 cold cycles clean vs the precompiled build looping. So the fault lives
+>   in the **precompiled arduino-esp32 core binaries** for the C5 (a very new
+>   chip on the pioarduino fork), not in our code or config. The one garbled
+>   dump we did get pointed at `esp_phy_load_cal_data_from_nvs` + heap during
+>   WiFi/PHY init, consistent with an early-init bug in that prebuilt code.
+> - **Fix:** switch the `T-Dongle-C5` env to a **from-source build** via a
+>   `custom_sdkconfig` entry in `platformio.ini` (any entry triggers pioarduino's
+>   from-source path; we pin the default recover-on-panic behavior as the
+>   trigger). Hardware-validated: cold reboot loop gone across the validation
+>   cycles, WiFi/SoftAP + SCAN/PMF/PMFDOWN all intact. **Cost:** C5 builds are
+>   now much slower and pull `framework-espidf` on first build for anyone
+>   cloning — documented in `AGENTS.md` and `platformio.ini`.
+> - **Not captured:** an exact decoded MEPC. The catch-22 (only the precompiled
+>   build reproduces it, and it can't be made to halt-on-panic without going
+>   from-source, which then doesn't reproduce it) makes the faulting instruction
+>   uncapturable without JTAG/gdbstub — not pursued, as the from-source build
+>   sidesteps the bug entirely.

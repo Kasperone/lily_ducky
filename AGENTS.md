@@ -140,10 +140,13 @@ SoftAP. Fully opt-in; plain `SCAN`/`PMF` are untouched.
   sweep, and results persist to SD (`pmf_*.txt`, Phase 2c reuse). The 6
   unconfirmed APs were all −97…−100 dBm (too weak for a beacon in the 250ms
   dwell), not a defect.
-- **Unrelated observation, tracked separately:** an intermittent boot panic
-  (~1 in 4 app-resets, register/stack dump) surfaced during this bring-up. It
-  predates 2d (reproduced on both pre- and post-fix images) and self-recovers
-  on the next reset — see `open-questions.md` #8 and issue #18.
+- **Unrelated observation, since RESOLVED:** an intermittent **cold-boot** panic
+  (reboot loop on a physical power-cycle; register/stack dump) surfaced during
+  this bring-up. It predates 2d and self-recovers. Root-caused to the
+  **precompiled arduino-esp32 core** for the C5 (PSRAM ruled out; from-source
+  and precompiled sdkconfigs are identical yet only the precompiled build
+  loops), and **fixed by switching the C5 env to a from-source build** — see the
+  build note below, `open-questions.md` #8, and issue #18.
 
 ## ⚠️ The ESP32-C5 cannot be a USB keyboard
 USB HID/MSC require a USB-OTG peripheral; in the ESP32 family only the S2/S3 have one.
@@ -264,6 +267,16 @@ Platform note: platformio.ini uses the **pioarduino fork** release URL (55.03.31
 official platformio/espressif32 doesn't support ESP32-C5. Board JSONs are vendored in
 `firmware/boards/` (from LilyGO repos) so no manual copy into ~/.platformio is needed.
 C5 upload: hold BOOT (GPIO28) while plugging in if the port isn't detected.
+
+**⚠️ The `T-Dongle-C5` env builds Arduino-ESP32 FROM SOURCE** (via a
+`custom_sdkconfig` entry in platformio.ini) — this is the fix for the cold-boot
+reboot loop that the precompiled core has on the C5 (issue #18 / open-questions
+#8). Consequences: the **first** C5 build downloads `framework-espidf`
+(hundreds of MB) and compiles the IDF+Arduino from source (minutes, not the
+~3s incremental of the precompiled path); later incremental builds are faster
+but still slower than precompiled. It also generates `firmware/managed_components/`
+and `sdkconfig.*` (all gitignored — `custom_sdkconfig` in platformio.ini is the
+source of truth). The `T-Dongle-S3` env is unaffected (still precompiled).
 
 ## Git conventions (see CONTRIBUTING.md)
 - Branches: `hw/<board>`, `feat/<name>`, `fix/<name>`, `docs/<name>`, `refactor/<name>` off `main`
