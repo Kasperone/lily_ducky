@@ -37,3 +37,13 @@ Thumbs.db
 
 # Real SoftAP credentials — copied from config_secret.h.example, never committed
 firmware/src/config_secret.h
+
+# ESP-IDF from-source build artifacts (T-Dongle-C5 env uses custom_sdkconfig,
+# which builds Arduino-ESP32 from source — issue #18 fix). These are generated
+# or downloaded per build; custom_sdkconfig in platformio.ini is the source of
+# truth, not the generated sdkconfig* files.
+firmware/managed_components/
+firmware/sdkconfig.defaults
+firmware/sdkconfig.*
+firmware/dependencies.lock
+firmware/.dummy/
