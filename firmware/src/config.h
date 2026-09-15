@@ -269,17 +269,19 @@
 #define CFG_RECON_MAX_STAS       16    // station table capacity (RAM-resident)
 
 // Whether a plain SCAN auto-chains the PMF sweep once it completes. Default
-// OFF: the sweep's channel-hop-then-restoreApChannelAndRecover() path is
-// now hardware-confirmed safe (2026-09-07, via the explicit `PMF` console
-// command — no loop hang, see AGENTS.md's Module B note; channel-hop
-// recovery is exactly what hung the main loop once before in 2a-era code,
-// see harvestScan's AP-recovery comment, so this was worth confirming
-// separately rather than assuming). Left OFF anyway, pending a decision on
-// whether to fold it back into the default SCAN flow — with it off, SCAN
-// stays byte-for-byte the proven 2a path, and PMF only runs when explicitly
-// requested (console `PMF` command / Recon::startPmfSweep()).
+// ON as of the fold-back decision below: the sweep's channel-hop-then-
+// restoreApChannelAndRecover() path is hardware-confirmed safe
+// (2026-09-07, via the explicit `PMF` console command — no loop hang, see
+// AGENTS.md's Module B note; channel-hop recovery is exactly what hung the
+// main loop once before in 2a-era code, see harvestScan's AP-recovery
+// comment, so this was worth confirming separately rather than assuming).
+// It was left OFF for a cycle after that confirmation specifically to keep
+// SCAN byte-for-byte the proven 2a path while PMF's own safety was
+// validated in isolation via the explicit command — that's now done, so a
+// plain SCAN chains PMF automatically. Explicit `PMF` (and `PMFDOWN`) still
+// work standalone (e.g. re-running PMF alone, or after PMFDOWN's DFS pass).
 #ifndef CFG_RECON_AUTO_PMF_SWEEP
-#define CFG_RECON_AUTO_PMF_SWEEP 0
+#define CFG_RECON_AUTO_PMF_SWEEP 1
 #endif
 #define CFG_RECON_ENUM_DWELL_MS  4000  // dwell per ENUM <ap-index> attempt
 

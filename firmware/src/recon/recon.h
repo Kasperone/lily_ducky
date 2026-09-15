@@ -79,9 +79,10 @@ namespace Recon {
     // ── Phase 2b: RSN-IE PMF sweep + station enumeration ────────────────────
     // Sweeps the channels from the last completed scan's AP table, hopping
     // each to catch a beacon/probe-resp and parse its RSN IE. Auto-chained
-    // after startScan() only when CFG_RECON_AUTO_PMF_SWEEP is set (default
-    // OFF — see config.h); otherwise call this explicitly (console `PMF`
-    // command). Fails if the radio is busy or the last scan found no APs.
+    // after startScan() by default (CFG_RECON_AUTO_PMF_SWEEP in config.h,
+    // default ON); this can also be called explicitly (console `PMF`
+    // command) to re-run it standalone. Fails if the radio is busy or the
+    // last scan found no APs.
     // pmfSweeping() polls it; results land in ApRecord::pmfStatus in place.
     bool startPmfSweep();
     bool pmfSweeping();

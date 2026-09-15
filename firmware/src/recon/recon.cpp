@@ -687,11 +687,10 @@ static void harvestScan()
 
     // Phase 2b: automatically confirm PMF for whatever the scan just found,
     // sequentially — never concurrently with the managed scan itself (see
-    // config.h and startPmfSweepInternal). Gated OFF by default (see
-    // CFG_RECON_AUTO_PMF_SWEEP in config.h): the sweep's channel-hop-then-
-    // recovery path is now hardware-confirmed safe via the explicit `PMF`
-    // command (2026-09-07, no loop hang — see AGENTS.md), but the flag stays
-    // off pending a decision on whether to fold it back into plain SCAN.
+    // config.h and startPmfSweepInternal). Gated ON by default (see
+    // CFG_RECON_AUTO_PMF_SWEEP in config.h) now that the sweep's channel-
+    // hop-then-recovery path is hardware-confirmed safe via the explicit
+    // `PMF` command (2026-09-07, no loop hang — see AGENTS.md).
 #if CFG_RECON_AUTO_PMF_SWEEP
     startPmfSweepInternal();
 #endif
