@@ -20,8 +20,14 @@ namespace Display {
     // Update display based on current interpreter + WiFi state.
     // Call every loop — paints to the LCD are diff-gated so this stays
     // cheap when nothing has changed.
+    // pc/lineCount/currentLine/layoutId/osResult are read straight off the
+    // running Interpreter/Hal (see Interpreter::getPc() etc., config.h's
+    // OS_*/LAYOUT_* constants) — Display stays decoupled from those classes,
+    // same as the existing InterpState param.
     void update(InterpState interpState, bool c2Running, int clients,
-                bool reconCapturing, uint32_t reconPackets);
+                bool reconCapturing, uint32_t reconPackets,
+                int pc, int lineCount, const char* currentLine,
+                uint8_t layoutId, uint8_t osResult);
 
 } // namespace Display
 

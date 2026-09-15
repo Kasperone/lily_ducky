@@ -234,7 +234,12 @@ void loop()
         C2Server::running(),
         C2Server::connectedClients(),
         Recon::capturing(),
-        Recon::packetCount()
+        Recon::packetCount(),
+        interp.getPc(),
+        interp.getLineCount(),
+        interp.getCurrentLine(),
+        interp.getLayoutId(),
+        Hal::osDetectResult()
     );
 
     // Check button press → trigger payload (alternative to auto-fire)
