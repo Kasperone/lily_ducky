@@ -87,10 +87,12 @@ static void handleEnum(const String& arg)
     }
 }
 
-// `PMF` — explicit Phase 2b PMF sweep trigger (CFG_RECON_AUTO_PMF_SWEEP is
-// OFF by default, so a plain SCAN no longer chains this — see config.h).
-// Sweeps the channels from the last completed SCAN's AP table; results
-// stream as `[RECON]` lines from Recon::tick(), same as an auto-chained one.
+// `PMF` — explicit Phase 2b PMF sweep trigger. A plain SCAN already
+// auto-chains this (CFG_RECON_AUTO_PMF_SWEEP defaults ON — see config.h);
+// this command exists to re-run the sweep standalone (e.g. after PMFDOWN's
+// DFS pass, or without a fresh SCAN). Sweeps the channels from the last
+// completed SCAN's AP table; results stream as `[RECON]` lines from
+// Recon::tick(), same as the auto-chained run.
 static void handlePmf()
 {
     if (!Recon::startPmfSweep()) {

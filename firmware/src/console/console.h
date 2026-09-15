@@ -13,11 +13,13 @@
 //                    here (previously serial had no trigger for it at all)
 //                    so PMF/ENUM below have a serial-only way to get the AP
 //                    table they depend on. Results stream as [RECON] lines.
+//                    Auto-chains the PMF sweep below when it completes
+//                    (CFG_RECON_AUTO_PMF_SWEEP in config.h, default ON).
 //   PMF           — Phase 2b: sweeps the channels from the last completed
 //                    SCAN's AP table and parses each AP's real PMF status
-//                    from its RSN IE. Explicit-only by default (see
-//                    CFG_RECON_AUTO_PMF_SWEEP in config.h). Results stream
-//                    as [RECON] lines.
+//                    from its RSN IE. Runs automatically after SCAN (see
+//                    above); this command re-runs it standalone. Results
+//                    stream as [RECON] lines.
 //   ENUM <index>  — Phase 2b station enumeration for AP <index> from the
 //                    last SCAN's table (see recon/recon.h). Results stream
 //                    as [RECON-STA] lines.
