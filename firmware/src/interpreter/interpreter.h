@@ -42,6 +42,16 @@ public:
     // Built-in variable injection (called by main after OS detection)
     void setBuiltinVar(const char* name, uint16_t val);
 
+    // Read-only progress introspection for Display — no state changes.
+    // getCurrentLine() returns "" once the script has run past the end
+    // (_pc == _lineCount) rather than indexing out of bounds.
+    int getPc() const { return _pc; }
+    int getLineCount() const { return _lineCount; }
+    uint8_t getLayoutId() const { return _layoutId; }
+    const char* getCurrentLine() const {
+        return (_pc >= 0 && _pc < _lineCount) ? _lines[_pc] : "";
+    }
+
 private:
     char _lines[MAX_LINES][MAX_LINE_LEN];
     int _lineCount;
