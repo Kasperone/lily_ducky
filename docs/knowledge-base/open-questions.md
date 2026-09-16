@@ -594,3 +594,118 @@ issue #18.
 >   from-source, which then doesn't reproduce it) makes the faulting instruction
 >   uncapturable without JTAG/gdbstub — not pursued, as the from-source build
 >   sidesteps the bug entirely.
+
+## 9. OPEN — C2 REST API's HTTP layer intermittently fails for a real external WiFi client; root cause not yet found, and this dev VM lacks the tooling to find it
+
+**Where:** `firmware/src/c2/web_server.cpp` (`WebServer::handleClient()` via the
+vendored arduino-esp32 `WebServer`/`NetworkClient` libraries), C5 SoftAP.
+
+**Why this matters more than it might look:** every prior "C2 REST API verified
+end-to-end on hardware" claim in this file's Status section (the 12/12 self-test,
+2026-08-30) used the device's own `127.0.0.1` loopback — never a real external
+WiFi client. AGENTS.md already flagged this gap ("Still pending: a true
+over-the-air pass... loopback covers the HTTP+handler+interpreter+SD path but
+not the radio/DHCP path"). This entry is the first time that pass was actually
+attempted (2026-09-16, a Win11 VM joined the SoftAP as a real WiFi client and
+drove the API with `curl`), and it does not work reliably.
+
+**Symptom, in two different failure modes seen on the same board in the same
+session, separated by minutes with a stable link the whole time:**
+1. TCP connects, the full HTTP request is sent and received, the server-side
+   handler runs to completion and `WebServer::send()` returns with no error —
+   and the client still receives zero response bytes and hangs indefinitely.
+2. TCP itself never establishes — `curl` reports a connect-phase timeout before
+   getting anywhere near HTTP. Observed in bursts: one clean 4-minute run of 60
+   consecutive `/api/status` requests, 1 request every ~4s, was **100% connect
+   timeouts** (`curl -w '%{http_code}'` → `000` every time).
+
+**What was ruled out, each with hardware evidence, before concluding this is a
+genuine unresolved bug rather than an environment mistake:**
+- **Client-side networking.** DHCP handed the Win11 VM a correct
+  `192.168.4.0/24` address, `ping 192.168.4.1` succeeded every time, and `curl
+  -v` showed a real completed TCP handshake in failure mode 1 above. Not a
+  routing/DNS/firewall problem.
+- **Response size.** The dashboard's ~7KB HTML page was suspected first (this
+  project has a documented history of large-response TX stalls over this
+  SoftAP, see the recon pcap-download comment in `web_server.cpp`); a bare
+  ~100-byte `/api/status` JSON response fails identically.
+- **WiFi link/association dropping.** `WiFi.onEvent()` handlers for
+  `ARDUINO_EVENT_WIFI_AP_STACONNECTED`/`_STADISCONNECTED` (now a permanent
+  addition to `web_server.cpp` — logs the station MAC and, on disconnect, the
+  802.11 reason code) never fired a disconnect during either failure mode; the
+  LCD's `Clients:` row stayed at `1` throughout; and a ~4-minute promiscuous
+  capture of 802.11 management frames spanning a failure window (via Recon's
+  existing Phase 1 capture, triggered over serial to sidestep the very HTTP
+  path under test) shows **zero** deauth/disassoc frames involving the
+  station's MAC. The link is solid at the radio-association level in both
+  failure modes.
+- **Main-loop / CPU stalls.** A temporary loop-duration watchdog
+  (`millis()` delta each `loop()` iteration, logging anything over 100ms) was
+  flashed and run through both a successful request and a failing one:
+  **zero stalls** in either case. `WebServer::handleClient()`'s state machine
+  is being pumped promptly and often; the failure is not "the sketch is busy."
+- **Recon capture interference.** The LCD's `Recon:` row read `off` during
+  the 100%-failure 4-minute window — no capture was silently running and
+  monopolizing the radio.
+
+**A real, separate, confirmed bug found along the way (not the cause of the
+above, but worth fixing on its own):** `Recon::stopCapture()` blocked
+`loop()` for **3.2 seconds** flushing 1642 buffered packets to SD in one shot,
+and the serial `DUMP` command blocked it for **~1.4 seconds** reading a file
+back. Both were caught by the same loop-duration watchdog. Neither happened
+during the specific windows that produced the HTTP failures above (no capture
+was active then), so they're independent findings, not the same bug — but a
+multi-second unyielding block anywhere in `loop()` is a real problem for a
+cooperatively-scheduled sketch that also has to service `WebServer`, the
+interpreter, and OS-detection timing, and should be fixed (chunk the SD
+flush/read across multiple `loop()` iterations rather than doing it in one
+blocking call) independent of this investigation.
+
+**What could not be determined, and why — a real tooling gap, not a dropped
+thread:** whether the AP's own response frames ever leave the radio. This
+project already has a working promiscuous 802.11 capture (Recon Phase 1), and
+the natural next step was to capture the AP's own channel during a failing
+request. That capture ran successfully (1642 packets, ~4 minutes) but
+contained **zero** frames from the AP's own SSID/BSSID at all — not because
+the AP wasn't transmitting, but because a single-radio promiscuous sniffer
+cannot see its own device's outgoing transmissions (it never saw its own
+beacons either, which should number in the thousands over that window if it
+could). Answering "does the response frame actually leave the radio" needs an
+**independent second radio** in monitor mode watching the AP's channel from
+outside — a second WiFi adapter on another machine, or a dedicated sniffer.
+This dev VM has no WiFi radio at all (the reason the over-the-air test needed
+a separate Win11 VM as the client in the first place), and no such
+external-capture setup exists yet for either machine.
+
+**Leading hypothesis, unconfirmed:** something in this lwIP build's handling
+of the SoftAP's own interface/IP, specific to real external-station traffic,
+possibly related to the already-documented "`192.168.4.1` loopback isn't
+routed on this lwIP build" quirk (Status section, Phase 2b) — the self-test
+had to use `127.0.0.1` to route around *that* quirk, and it's plausible both
+symptoms share a root cause in how this build's netif/lwIP config handles the
+AP's own address, now showing up from the other direction (a real external
+peer talking to that address) rather than the device talking to itself. This
+is a hypothesis, not a finding — nothing above actually tested it.
+
+**Recommended next steps, in order of cost:**
+1. Fix the confirmed SD-blocking bug (`Recon::stopCapture()`/`DUMP`) — cheap,
+   independent, real.
+2. Get a second radio in monitor mode (any spare WiFi adapter, on the Win11
+   VM or elsewhere) watching the AP's channel during a repeat of this test —
+   the one piece of evidence that would actually distinguish "frame never
+   transmitted" from "frame transmitted but not received/acked" from "frame
+   received but dropped somewhere in the client's own stack" (the last of
+   which curl's `-v` output already argues against, but an independent
+   capture would confirm outright).
+3. If a second radio isn't available soon, next-cheapest is ESP-IDF-level
+   instrumentation this session's Arduino/Serial toolchain can't reach:
+   `lwip_stats` (needs `CONFIG_LWIP_STATS=y` in the sdkconfig this project
+   already builds from source, so it's reachable) for TX/RX/drop counters at
+   the netif and TCP layers, read out over serial.
+4. Do not re-attempt this by adding more `Serial.printf` diagnostics at the
+   `WebServer`/`NetworkClient` application layer — this session already
+   proved every layer down to and including the app's own `send()` call
+   behaves correctly and reports success. Further app-layer prints cannot
+   see past that boundary; the next useful signal has to come from either
+   outside the radio (step 2) or inside the IDF network stack's own counters
+   (step 3).
