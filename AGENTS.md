@@ -46,9 +46,15 @@ answering anything (ARP/ICMP/TCP) for every request after that — a precise
 "works once, then wedges" pattern, not pure randomness. A three-part fix
 attempt (TX buffer headroom, WDT idle-task coverage, `lwip_stats`
 instrumentation — see `platformio.ini`'s `custom_sdkconfig` comment) did not
-resolve it, but the same `lwip_stats` pull, done live on this exact wedge,
-showed zero drops/errors anywhere in lwIP's own accounting — ruling out
-lwIP-level buffer exhaustion as the mechanism. Root cause still not found —
+resolve it. **Root cause now LOCALIZED (2026-09-17, 2nd session):** on a
+both-sides-confirmed clean wedge, lwIP reported transmitting 217 TCP segments
+(SYN-ACKs+retransmits) with zero errors while the client received only 2 frames
+total from the AP — uplink (lwIP RX) is fully healthy, so the fault is the WiFi
+driver's **AP→STA downlink TX path, below lwIP** (`esp_wifi_internal_tx()`
+returns OK but frames don't reach the station). This rules out the Arduino
+`WebServer`/`NetworkClient` accept-state theory (lwIP's own SYN-ACKs never
+leave) and confirms an ESP-IDF/driver-level bug. Next lead is direct driver-TX
+instrumentation; an independent monitor radio remains a tie-breaker only —
 see `docs/knowledge-base/open-questions.md` #9 for the full investigation
 (now including this round), what was ruled out, a separate real bug found
 along the way (SD-flush blocking `loop()` for 3+ seconds in

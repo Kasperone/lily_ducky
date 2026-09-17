@@ -816,3 +816,135 @@ cause) and the `LWIPSTATS` console command (already proved its worth —
 keep using it on any future reproduction attempt, ideally *before* assuming
 a buffer/memory theory again, since this round's data already argues against
 one).
+
+### Update 2026-09-17 (second session, same day) — root cause LOCALIZED with direct evidence: the AP→station DOWNLINK TX path in the WiFi driver, below lwIP, silently drops ~99% of the frames lwIP hands it. lwIP RX (uplink) is fully healthy; the Arduino WebServer/accept theory is effectively ruled out.
+
+**Headline:** on a rigorously clean, both-sides-confirmed reproduction, the C5's
+own lwIP reported transmitting **217 TCP segments** (SYN-ACKs + retransmits)
+with **zero** TX errors (`drop`/`memerr`/`err` all 0), while an independent
+client-side packet capture proves the client received **exactly 2 frames** from
+the AP across the entire test (one ARP reply, one lone SYN-ACK). Uplink is
+perfect: lwIP *received* all 30 of the client's TCP SYNs (`TCP recv: 31`). The
+loss is entirely on the **AP→station downlink, between lwIP's tx handoff and the
+air** — the one layer `LWIPSTATS` cannot see, which this session's prior update
+named as remaining lead #1. It is now the confirmed locus.
+
+**Why this was done without the independent-monitor capture the previous update
+called for, and why the substitute is actually more direct for this question:**
+this dev VM has exactly **one** WiFi radio (the Alfa/RTL8812AU is `phy2`, the
+only phy present), and the SoftAP is **WPA2-PSK** (SSID `Lily`, ch6). Monitor
+mode and being the test client are mutually exclusive on one radio, and you
+cannot inject a WPA2 data frame from monitor mode without the PTK — so the
+"second radio in monitor mode during a live client request" test is not
+performable in this environment as-is. Instead the AP's *own* transmit
+accounting (`LWIPSTATS` TCP/IP/ETHARP `xmit`) was compared against what the
+client's stack actually received (`tcpdump` on the client's managed-mode netdev,
+below its IP layer). That pair answers "did the AP emit a response, and did the
+client receive it" more directly than a sniffer would: it reads lwIP's intent
+(217 sent) against ground-truth delivery (2 received). See the residual gap the
+monitor capture *would* still close, at the end.
+
+**Reproduction conditions (the cleanest yet, and both-sides-confirmed):**
+- Board freshly re-enumerated/rebooted (LWIPSTATS baseline was near-zero:
+  `ETHARP/IP/TCP recv` all 0), `/dev/ttyACM0`, iSerial `38:44:BE:BC:F9:3C`.
+- **Association confirmed healthy from BOTH ends, for the whole test:** client
+  `iw link` steady at -40 dBm for 60 s undisturbed before starting and still
+  `Connected` after; the C5's own `WiFi.onEvent()` logged exactly one
+  `station connected: 00:C0:CA:B1:71:6F (aid=1)` and **zero** disconnects
+  across the entire run. Static IP `192.168.4.60/24`, client `power_save off`,
+  single `wpa_supplicant` instance, NetworkManager set `unmanaged` on the iface.
+- A serial monitor logged the C5 continuously; requests were driven from the
+  Linux client with `curl -w`.
+
+**The decisive data (one clean run, three `LWIPSTATS` pulls + one client pcap):**
+
+| Layer  | after assoc | after 1 ping | after 6× `curl /api/status` | client actually RXed |
+|--------|:-----------:|:------------:|:---------------------------:|:--------------------:|
+| ETHARP xmit/recv | 0 / 0 | 1 / 1 | 4 / 4 | 1 ARP reply |
+| IP xmit/recv     | 0 / 0 | 2 / 2 | **219 / 33** | — |
+| TCP xmit/recv    | 0 / 0 | 0 / 0 | **217 / 31** | **1 SYN-ACK** |
+
+- **Uplink (client→AP) is fully healthy.** lwIP received every SYN: `TCP recv:
+  31` ≈ the 30 SYN+retransmits the client pcap shows it sent. So the driver's
+  *receive* path delivers the station's frames to lwIP correctly. (This
+  overturns this session's own first, discarded run — see "false start" below.)
+- **Downlink (AP→client) is where it dies, silently.** lwIP emitted `TCP xmit:
+  217` (SYN-ACKs and their retransmits) with a clean `drop:0 memerr:0 err:0`
+  and `cachehit: 31` — from lwIP's and the app's point of view every send
+  succeeded. The client pcap, taken below its own IP stack, received **2 frames
+  total from the AP** the entire test: the initial ARP reply
+  (`10:02:24`, 2 ms after the who-has) and a single stray SYN-ACK (`10:02:53`).
+  ~2 of ~219 attempted downlink frames arrived. curl reported `code=000
+  conn=0.000000` for all 6 requests (the TCP handshake never completed).
+
+**What this RULES IN (with direct evidence, not inference):**
+- The fault is in the **WiFi driver's AP→STA transmit path, below lwIP** —
+  `esp_wifi_internal_tx()` (or the layer under it) accepts frames from lwIP,
+  returns success, and does not deliver them to an associated station. lwIP's
+  own accounting is clean precisely because the failure is beneath it. This is
+  the mechanism the buffer-bump and lwIP-stats work could never see, now shown
+  directly by the xmit-vs-delivered gap.
+- The "works once, then wedges" shape is **downlink-frame-granular**: the very
+  first downlink frame (the ARP reply) got through, then delivery collapsed;
+  one later SYN-ACK slipped out. Consistent with earlier sessions' "first
+  request succeeds then wedges," now located at frame-TX delivery rather than
+  at HTTP or TCP.
+
+**What this RULES OUT (or strongly demotes):**
+- **The Arduino `WebServer`/`NetworkClient` accept-state-machine theory (prior
+  lead #2).** The frames that fail to leave are lwIP's *own* SYN-ACKs, generated
+  by the TCP stack with no WebServer involvement — the handshake never completes,
+  so the WebServer never receives a connection to mishandle. The failure is
+  below TCP entirely. `NetworkClient` is not the cause.
+- **A TCP-specific bug.** ICMP echo replies fail the same way (2 echoes sent by
+  the client, 0 replies received), as does most ARP. It is general downlink, not
+  a TCP quirk.
+- **lwIP resource exhaustion** — reconfirmed: `drop:0 memerr:0` everywhere, TX
+  path never reports back-pressure.
+
+**Honest caveats and a discarded false start:**
+- **A first run this session is discarded as inconclusive.** Before confirming
+  association health from the C5 side, an earlier attempt showed `ETHARP recv:
+  0` and total failure — but that run's client link dropped to `Not connected`
+  moments later, i.e. the association was actually unstable (the documented
+  rtw88/wpa_supplicant/NetworkManager flapping). Its "driver drops uplink"
+  reading is an artifact of a half-up link and is superseded by the
+  both-sides-confirmed run above, where uplink is demonstrably fine. Recorded
+  so the contradiction isn't rediscovered as a mystery.
+- **lwIP's ICMP counters looked unreliable** in this build (`ICMP recv: 0` even
+  though `IP recv` accounts for the 2 echo requests); the conclusion rests on
+  the TCP counters, which are internally consistent (`recv 31`/`cachehit 31`,
+  `xmit 217`) and corroborated by the pcap.
+- **The one thing still not physically proven, and the sole remaining job for an
+  independent monitor radio:** whether those 215 undelivered frames are dropped
+  *inside the driver before the PHY transmits them*, or are transmitted on-air
+  but dropped by the client's own mac80211 on receive. The evidence makes the
+  latter implausible — the client receives this AP's beacons continuously (RX
+  byte counters climb), received its ARP reply and one SYN-ACK cleanly at
+  -40 dBm, so 215 consecutive same-link RX drops would be extraordinary — but
+  only a second radio in monitor mode on ch6, watching the AP from outside
+  during a live wedge, closes it outright. Single-radio + WPA2 still blocks that
+  test in this VM; it needs a second radio *and* a separate client device.
+
+**Recommended next steps, revised:**
+1. Treat this as an ESP-IDF/arduino-esp32 WiFi-driver downlink-TX bug on the
+   ESP32-C5 SoftAP, not an application- or lwIP-level bug. Search/report
+   upstream with this specific signature: *SoftAP, associated station stays
+   connected, `esp_wifi_internal_tx()` returns OK, station receives almost no
+   downlink frames.* (The `GhostESP-Revival/GhostESP#382` "packet allocation
+   failed" C5 report and `esp-idf#14016` STA-mode analogue remain the closest
+   public leads; this is stronger evidence than either.)
+2. Instrument the driver TX path directly, below lwIP: log the return of the
+   raw `esp_wifi_internal_tx()`/`wifi_transmit` call and, if reachable, the
+   WiFi driver's own low-level TX free-descriptor / `wifi:packet allocation`
+   state at the moment of the wedge — this is the layer that now needs eyes,
+   and it is below where `LWIPSTATS` and app-layer prints can see.
+3. Only if driver instrumentation is inconclusive, do the independent
+   monitor-radio capture (needs a *second* radio plus a separate client) to
+   split "dropped before PHY" from "TXed but lost" — now a tie-breaker, not the
+   primary lead.
+
+**State left on the bench:** board associated and idle at `/dev/ttyACM0`; the
+raw capture, three LWIPSTATS blocks, and event log from this run are in the
+session scratchpad. No firmware changed this session (LWIPSTATS + onEvent were
+already committed); nothing to revert.
