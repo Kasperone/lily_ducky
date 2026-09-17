@@ -36,23 +36,30 @@ fixed a real bug**: the parameterized routes were registered as bare strings
 (`Uri::canHandle` is `_uri == requestUri`), so every real filename 404'd —
 payload upload/run had never worked from any client. Fixed with
 `UriBraces("/api/payload/{}")` (see the gotcha below). **The over-the-air pass
-has now been attempted (2026-09-16, a real WiFi-joined client — a separate
-Win11 VM, since this build/flash VM still has no WiFi radio itself) and it
-does NOT work reliably**: real external HTTP requests to the SoftAP
-intermittently fail two different ways (server-side handler completes and
-`send()` returns OK but the client gets zero bytes; or TCP itself never
-establishes, in sustained bursts — one clean run saw 60/60 consecutive
-requests fail) despite the WiFi association itself staying up the whole time
-(confirmed via station connect/disconnect event logging, the LCD's live
-client counter, and a promiscuous capture showing zero deauth/disassoc
-frames). Root cause not found — see `docs/knowledge-base/open-questions.md`
-#9 for the full investigation, what was ruled out, a separate real bug found
+has now been attempted (2026-09-16/17, real WiFi-joined clients — a Win11 VM,
+then a dedicated Linux WiFi adapter once one became available — since this
+build/flash VM still has no WiFi radio itself) and it does NOT work
+reliably**: on the cleanest test run so far (fresh boot, single verified
+association, no interfering processes), the SoftAP answered the client's
+*first* real HTTP request completely correctly, then permanently stopped
+answering anything (ARP/ICMP/TCP) for every request after that — a precise
+"works once, then wedges" pattern, not pure randomness. A three-part fix
+attempt (TX buffer headroom, WDT idle-task coverage, `lwip_stats`
+instrumentation — see `platformio.ini`'s `custom_sdkconfig` comment) did not
+resolve it, but the same `lwip_stats` pull, done live on this exact wedge,
+showed zero drops/errors anywhere in lwIP's own accounting — ruling out
+lwIP-level buffer exhaustion as the mechanism. Root cause still not found —
+see `docs/knowledge-base/open-questions.md` #9 for the full investigation
+(now including this round), what was ruled out, a separate real bug found
 along the way (SD-flush blocking `loop()` for 3+ seconds in
-`Recon::stopCapture()`/`DUMP`), and why this dev VM's tooling can't go
-further (no second radio for an independent over-the-air capture). (Also
-noted: own-AP-IP loopback to 192.168.4.1 isn't routed on this lwIP build; the
-self-test reaches the server via 127.0.0.1 — possibly related to #9's root
-cause, per that entry's leading hypothesis.) The status LED **works** — RESOLVED 2026-08-30 after ~15 sessions of a
+`Recon::stopCapture()`/`DUMP`), and the next step (an independent
+over-the-air capture from that second radio, in monitor mode, watching a
+live reproduction from outside — set up but not yet run). New permanent
+console command `LWIPSTATS` (dumps lwIP's counters on demand) came out of
+this and is worth reaching for first on any future reproduction attempt.
+(Also noted: own-AP-IP loopback to 192.168.4.1 isn't routed on this lwIP
+build; the self-test reaches the server via 127.0.0.1 — possibly related to
+#9's root cause, per that entry's leading hypothesis.) The status LED **works** — RESOLVED 2026-08-30 after ~15 sessions of a
 "dead LED" red herring. It was a **pin bug**: the APA102 is on **GPIO2 (data)
 / GPIO6 (clock)** — the LCD/SD SPI bus — **not GPIO4/5** as the vendor's own
 `pin_config.h` claims. Every prior test drove 4/5 (the JTAG pads), which

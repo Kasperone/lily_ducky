@@ -1,7 +1,7 @@
 // =============================================================================
 // console/console.h — tiny serial command interface (USB-CDC console)
 // =============================================================================
-// Five commands:
+// Six commands:
 //   DUMP <file>   — base64-dumps a file from SD_RECON_DIR to Serial, wrapped
 //                    in DUMP_BEGIN/DUMP_END markers. Exists to pull recon
 //                    captures off the SD card over the wired USB-CDC link
@@ -31,6 +31,11 @@
 //                    AGENTS.md's Module B note for the root-cause analysis
 //                    behind this design (deferred/tick-based, settling
 //                    delays, narrowest primitives).
+//   LWIPSTATS     — dumps lwIP's internal pbuf/memp/proto counters
+//                    (stats_display(), CONFIG_LWIP_STATS=y). Added for
+//                    open-questions.md #9 (C5 SoftAP goes deaf for a real
+//                    external client after one request); kept as a general
+//                    tool since it already proved useful there.
 //
 // No auth on these commands: Serial access is already this firmware's
 // trust boundary — the C2 auth token itself is only ever printed here,
