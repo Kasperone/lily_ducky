@@ -8,6 +8,7 @@
 #include "storage/storage.h"
 #include "recon/recon.h"
 #include "lwip/stats.h"  // TEMP DIAGNOSTIC (open-questions.md #9): LWIPSTATS command
+#include "c2/web_server.h"  // TXSTATS/TXRESET commands (open-questions.md #9)
 
 static char _line[80];
 static size_t _lineLen = 0;
@@ -143,6 +144,10 @@ static void dispatch(const String& line)
         handlePmf();
     } else if (line == "LWIPSTATS") {
         handleLwipStats();
+    } else if (line == "TXSTATS") {
+        C2Server::printTxStats();
+    } else if (line == "TXRESET") {
+        C2Server::resetTxStats();
     }
     // Unrecognized lines are ignored — this console shares the port with
     // the normal boot/status log, so silently ignoring stray input (rather

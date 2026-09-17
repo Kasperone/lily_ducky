@@ -44,6 +44,15 @@ namespace C2Server {
     // Set the interpreter pointer for API endpoints
     void setInterpreter(Interpreter* interp);
 
+    // open-questions.md #9 instrumentation: the WiFi driver's per-frame
+    // TX-done callback records, per interface, how many frames the MAC
+    // reports it transmitted and whether each was ACKed by the peer — the
+    // layer *below* lwIP that LWIPSTATS can't see. printTxStats() dumps the
+    // counters to serial (TXSTATS console command); resetTxStats() zeroes
+    // them (TXRESET) so a single request window can be measured in isolation.
+    void printTxStats();
+    void resetTxStats();
+
 } // namespace C2Server
 
 #endif
