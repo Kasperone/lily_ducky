@@ -1003,3 +1003,47 @@ while `ok` stays flat, the MAC is transmitting data frames the station never
 ACKs (loss below lwIP's handoff, at TX/RF); if `AP ok` climbs with the client
 still receiving nothing, the frames are ACKed yet lost — the sole case that
 would finally require the independent monitor radio.
+
+### Update 2026-09-17 (second session, cont. 2) — the client "4-way failure" carries the SAME downlink-wedge signature; it may BE the bug, not an adapter fault. TXSTATS shows the AP sends EAPOL M1 (ACKed) then never sends M3.
+
+After the Alfa was replugged (client re-enumerated cleanly, `phy4`, new interface,
+USB autosuspend disabled) and every guest-side adapter recovery was exhausted —
+`modprobe -r/modprobe rtw88_8821au` (×2), `usbreset`, a full USB-driver
+`unbind`/`bind` of the adapter, and a fresh C5 reboot+replug — the WPA2 4-way
+handshake **still fails identically every time** (`wpa_supplicant reason=15`,
+"PSK may be incorrect"). The PSK was then **proven correct**: `wpa_passphrase
+Lily jocker-batman-mario` outputs exactly the hash in the client conf and
+matches `config_secret.h` (SSID `Lily`, pass `jocker-batman-mario`). So
+`WRONG_KEY` is wpa_supplicant's generic guess, not a real key mismatch.
+
+**The new evidence, from the TXSTATS tool built this session, reframes it.**
+Polling the AP's driver TX-done counter across a single handshake attempt
+(after `TXRESET`) shows the AP-side EAPOL transmit count go `0 → 0 → 0 → 1 → 1`:
+the AP transmits **M1 exactly once, it is ACKed (`AP if1 ok=1 fail=0`), and then
+nothing more** — no M1 retransmit, and no M3 (the count never reaches 2). Because
+`tx_done_cb` only fires when the MAC actually transmits a frame, an M3 that the
+driver drops *before* the MAC would produce exactly this reading. That is the
+**same "first downlink frame succeeds, the next one wedges" signature** this
+whole entry is about — here landing on the 4-way handshake's M3 (the AP's second
+downlink frame) instead of on a later HTTP/TCP frame.
+
+**Why this matters:** it suggests the "client can't associate" blocker is very
+likely **not** an independent adapter fault but the downlink-TX bug itself,
+triggering much earlier than before (after 1 frame, vs after the dozens that
+went out in the 2026-09-17 clean run where the 4-way completed and the first
+HTTP request even succeeded). Whether the bug's trigger-point genuinely moved
+earlier, or this is variance, is unresolved — but the mechanism looks identical.
+Two honest caveats: (a) TXSTATS alone can't fully separate "M3 dropped in driver
+(downlink bug)" from "client's M2 never reached the AP (uplink) and the AP
+simply didn't retransmit M1" — though prior clean-run evidence showed uplink is
+healthy; (b) the same USB churn did land on the rtw88 adapter, which has its own
+documented flakiness, so an adapter contribution isn't fully excluded.
+
+**Cheapest decisive next test:** join the C5 SoftAP with **any other WPA2 client**
+(a phone/laptop). If a known-good client *also* fails the 4-way against this C5,
+the adapter is exonerated and this is firmware/driver — pointing the fix
+squarely at the ESP-IDF WiFi driver's downlink TX path, consistent with
+everything above. If the other client associates fine, the Alfa is the blocker
+and needs a host-level (VM-outside) USB reattach. The TXSTATS/LWIPSTATS/pcap
+measurement procedure from the previous update is unchanged and ready to run the
+moment any client can associate.
