@@ -35,12 +35,24 @@ fixed a real bug**: the parameterized routes were registered as bare strings
 (`"/api/payload/(.*)"`), which the Arduino `WebServer` matches *literally*
 (`Uri::canHandle` is `_uri == requestUri`), so every real filename 404'd —
 payload upload/run had never worked from any client. Fixed with
-`UriBraces("/api/payload/{}")` (see the gotcha below). Still pending: a true
-**over-the-air** pass with `scripts/c2_api_test.sh` from a WiFi-joined client —
-the build/flash VM has no WiFi radio, so it can't join the SoftAP; loopback
-covers the HTTP+handler+interpreter+SD path but not the radio/DHCP path. (Also
+`UriBraces("/api/payload/{}")` (see the gotcha below). **The over-the-air pass
+has now been attempted (2026-09-16, a real WiFi-joined client — a separate
+Win11 VM, since this build/flash VM still has no WiFi radio itself) and it
+does NOT work reliably**: real external HTTP requests to the SoftAP
+intermittently fail two different ways (server-side handler completes and
+`send()` returns OK but the client gets zero bytes; or TCP itself never
+establishes, in sustained bursts — one clean run saw 60/60 consecutive
+requests fail) despite the WiFi association itself staying up the whole time
+(confirmed via station connect/disconnect event logging, the LCD's live
+client counter, and a promiscuous capture showing zero deauth/disassoc
+frames). Root cause not found — see `docs/knowledge-base/open-questions.md`
+#9 for the full investigation, what was ruled out, a separate real bug found
+along the way (SD-flush blocking `loop()` for 3+ seconds in
+`Recon::stopCapture()`/`DUMP`), and why this dev VM's tooling can't go
+further (no second radio for an independent over-the-air capture). (Also
 noted: own-AP-IP loopback to 192.168.4.1 isn't routed on this lwIP build; the
-self-test reaches the server via 127.0.0.1 — a loopback detail, not a bug.) The status LED **works** — RESOLVED 2026-08-30 after ~15 sessions of a
+self-test reaches the server via 127.0.0.1 — possibly related to #9's root
+cause, per that entry's leading hypothesis.) The status LED **works** — RESOLVED 2026-08-30 after ~15 sessions of a
 "dead LED" red herring. It was a **pin bug**: the APA102 is on **GPIO2 (data)
 / GPIO6 (clock)** — the LCD/SD SPI bus — **not GPIO4/5** as the vendor's own
 `pin_config.h` claims. Every prior test drove 4/5 (the JTAG pads), which
@@ -96,11 +108,12 @@ validation, not a self-test. Two hardware-confirmed constraints found here
   station MAC on attempt 2 — the retry path itself, not just the underlying
   logic, is now validated.
 `CFG_RECON_AUTO_PMF_SWEEP` (config.h) gates whether a plain `SCAN` auto-
-chains the PMF sweep — default OFF, so `SCAN` alone is still exactly the
-proven 2a behavior; the sweep's channel-hop-then-recovery path
-(`restoreApChannelAndRecover()`) is now hardware-confirmed safe (no loop
-hang) via the explicit `PMF` command, but the flag is left off pending a
-decision on whether to fold it back into the default `SCAN` flow.
+chains the PMF sweep — **default ON as of PR #22** (folded back in once the
+sweep's channel-hop-then-recovery path, `restoreApChannelAndRecover()`, was
+hardware-confirmed safe via the explicit `PMF` command with no loop hang).
+Hardware-smoke-tested post-merge: `SCAN` alone now auto-chains PMF with no
+separate command, 19/32 confirmed, AP recovery clean, no hang. `PMF`/
+`PMFDOWN` remain available to re-run a sweep standalone.
 
 **Phase 2c** (SD persistence): `SCAN`, `PMF`, and `ENUM` each auto-save their
 exact serial output to `SD_RECON_DIR/<scan|pmf|enum>_<millis>.txt` right

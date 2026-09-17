@@ -604,6 +604,29 @@ static void handleNotFound()
     _server.send(404, "text/plain", "Not found");
 }
 
+// Station connect/disconnect logging — added while investigating a real
+// external WiFi client (as opposed to the device's own loopback self-test,
+// the only path previously verified) hitting the AP and getting a TCP
+// connection that never receives a response body. WiFi.softAPgetStationNum()
+// alone (what the LCD's Clients: row and /api/status use) only shows a
+// count, not *why* it moves — this logs the actual station MAC and, on
+// disconnect, the driver's reason code (802.11 reason codes, e.g. 2 =
+// PREV_AUTH_NOT_VALID, 4 = INACTIVITY, 8 = DISASSOC_STA_HAS_LEFT), so a
+// flapping station shows up as more than just a number on the dashboard.
+static void onApStaEvent(WiFiEvent_t event, WiFiEventInfo_t info)
+{
+    if (event == ARDUINO_EVENT_WIFI_AP_STACONNECTED) {
+        const uint8_t* m = info.wifi_ap_staconnected.mac;
+        Serial.printf("[C2] station connected: %02X:%02X:%02X:%02X:%02X:%02X (aid=%u)\n",
+                      m[0], m[1], m[2], m[3], m[4], m[5], info.wifi_ap_staconnected.aid);
+    } else if (event == ARDUINO_EVENT_WIFI_AP_STADISCONNECTED) {
+        const uint8_t* m = info.wifi_ap_stadisconnected.mac;
+        Serial.printf("[C2] station disconnected: %02X:%02X:%02X:%02X:%02X:%02X (aid=%u, reason=%u)\n",
+                      m[0], m[1], m[2], m[3], m[4], m[5],
+                      info.wifi_ap_stadisconnected.aid, info.wifi_ap_stadisconnected.reason);
+    }
+}
+
 // ── SoftAP radio bring-up ───────────────────────────────────────────────────
 // Extracted from start() so restartSoftAp() (Recon Phase 2a AP-down scan
 // variant) can restore the AP after a sweep without duplicating the band-mode
@@ -644,6 +667,12 @@ void C2Server::restartSoftAp() { startSoftApRadio(); }
 // ── Public: start / stop / tick ─────────────────────────────────────────────
 bool C2Server::start()
 {
+    // Registered once here, not in startSoftApRadio() — that's re-called by
+    // restartSoftAp() (Recon's AP-down PMF sweep) and WiFi.onEvent() has no
+    // dedupe, so re-registering there would log every connect/disconnect twice.
+    WiFi.onEvent(onApStaEvent, ARDUINO_EVENT_WIFI_AP_STACONNECTED);
+    WiFi.onEvent(onApStaEvent, ARDUINO_EVENT_WIFI_AP_STADISCONNECTED);
+
     startSoftApRadio();
 
     generateToken();
