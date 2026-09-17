@@ -709,3 +709,110 @@ is a hypothesis, not a finding — nothing above actually tested it.
    see past that boundary; the next useful signal has to come from either
    outside the radio (step 2) or inside the IDF network stack's own counters
    (step 3).
+
+### Update 2026-09-17 — fix attempted (step 3 above), disproven, bug re-characterized, and a real second-radio capture attempt hit a hard tooling wall of its own
+
+**Fix attempted, per step 3 above:** three targeted `custom_sdkconfig` additions
+in `platformio.ini` — `CONFIG_ESP_WIFI_STATIC_TX_BUFFER_NUM=32` (8→32, headroom
+against the TX-buffer-exhaustion mechanism a C5-specific community report
+showed), `CONFIG_LWIP_STATS=y` (instrumentation), and
+`CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU0=y` (was OFF — closes a real gap where
+a spinning task on this single-core chip would starve the idle task with no
+watchdog catching it). Web research first (a background agent search of
+Espressif's GitHub issues, ESP-IDF changelogs, and community reports) found no
+exact confirmed match for this symptom anywhere public — closest leads were a
+resolved-but-undiagnosed STA-mode analogue (`esp-idf#14016`), a C5-specific but
+undiagnosed community report showing the same `wifi:packet allocation failed`
+mechanism during an AP hang (`GhostESP-Revival/GhostESP#382`), and confirmation
+that `CONFIG_LWIP_TCPIP_CORE_LOCKING=y` (which this project's sdkconfig has on,
+not the ESP-IDF default) is the precondition for a real, Espressif-acknowledged
+locking bug (`esp-idf#9908`) — not touched here given the risk of an
+Arduino-wide default no session had time to fully de-risk.
+
+**A second, independent radio finally became available mid-investigation** (an
+Alfa AWUS036AU/RTL8812AU passed through to this dev VM) — the first real chance
+to see over-the-air traffic from *outside* the C5's own radio, which a
+same-device promiscuous capture structurally can't do (confirmed earlier: zero
+of the AP's own beacons ever showed up in its own capture). Getting a clean
+test out of it took far longer than expected and is itself worth recording:
+
+- Two of this session's own `wpa_supplicant` instances ended up fighting over
+  the same interface more than once, and a `pkill -f wpa_supplicant` matched
+  and killed the *invoking shell's own eval string* (which contains the literal
+  text "wpa_supplicant") rather than the target process — silently truncating
+  command output and producing a string of confusing, unrelated-looking
+  failures for a good stretch of the session before the mechanism was
+  identified. Lesson for next time: `pkill`/`pgrep` by exact PID or by bare
+  process name (no `-f`) when the pattern could plausibly appear in your own
+  command line.
+- NetworkManager (which owns this VM's WiFi by default) and a manually-run
+  `wpa_supplicant` both trying to manage the same interface caused the same
+  class of flapping.
+- The client radio itself needed a full kernel module reload
+  (`rmmod`/`modprobe rtw88_8821au`) at one point to clear a stuck state a
+  simple `usbreset` and interface down/up didn't fix.
+- The C5's own USB-Serial-JTAG console independently dropped from this VM more
+  than once during the session (device stayed on the USB bus per `lsusb` but
+  no `/dev/ttyACM*` node, zero configured interfaces in sysfs) — fixed each
+  time by a host-level USB passthrough detach/reattach, not by anything
+  software-fixable from inside the guest. Not established as related to the
+  firmware bug; recorded because it cost real time and could recur.
+
+**Once a genuinely clean, single, patient, serial-verified test was achieved**
+(fresh board reboot, confirmed clean boot log, single `wpa_supplicant`
+instance, real hardware MAC, 60s+ left undisturbed before checking), the result
+was decisive and — importantly — more precise than anything gathered before:
+
+- **The very first HTTP request after boot succeeded completely.** A real
+  `curl` from the external Linux client got a clean `HTTP/1.1 200 OK` with the
+  correct JSON body (`{"state":"complete","clients":1,"ap_ip":"192.168.4.1"}`)
+  — the first fully successful external-client request in this entire
+  investigation, across every session that has touched this bug.
+- **Every request after that first one failed completely** — 5 consecutive
+  `curl` attempts immediately following all timed out at the TCP-connect stage
+  (`HTTP 000`), with the 802.11 association still healthy throughout
+  (`iw ... link` showed "Connected" with climbing RX byte counters).
+- So the fix did **not** resolve the bug, but it clarified its actual shape:
+  this is not "randomly sometimes works, sometimes doesn't" — on a clean run it
+  is **exactly one success, then a permanent wedge**, every time tested this
+  way. Whether the earlier sessions' apparent intermittency (sometimes several
+  requests succeeded before failing, sometimes none did) was real variation or
+  itself an artifact of unclean test conditions (the same class of
+  double-process/stale-association confounds documented above) is now an open
+  question in its own right — this was the first time the test was run with
+  this level of hygiene.
+- **`LWIPSTATS`** (new permanent console command, `firmware/src/console/`,
+  calls lwIP's own `stats_display()`) pulled immediately after the wedge, on
+  this exact reproduction, showed: **zero** drops/memory errors/protocol
+  errors anywhere — `LINK`, `ETHARP`, `IP`, and `TCP` sections all clean — and
+  a **cached, still-valid ARP entry** for the client (`ETHARP cachehit: 380`,
+  `xmit: 1`/`recv: 1` — one real ARP exchange ever, then 380 reuses). This
+  rules out lwIP-level resource exhaustion (pbuf/memp pool exhaustion, the
+  buffer-bump fix's own working theory) as the mechanism — lwIP's own
+  accounting says nothing is wrong on its side. `TCP xmit: 380` for what
+  should be a handful of request/response/retry exchanges is itself notable
+  and unexplained.
+
+**Where this leaves the investigation:** the remaining plausible mechanisms are
+now narrowed to two, neither visible to lwIP's own stats: (1) something in the
+WiFi driver's own internal state, below lwIP, that a "clean" lwIP dump
+can't see; or (2) something in the Arduino `WebServer`/`NetworkClient`
+library's own connection-accept state machine that gets stuck specifically
+*after* successfully completing and closing one connection (consistent with
+this session's very first diagnostic pass, which showed the handler
+sometimes runs and `send()` returns without error — i.e. the app layer
+believes it succeeded — yet nothing reaches the client). A genuinely
+independent over-the-air capture (the Alfa, in monitor mode, watching the
+AP's channel from outside during a live reproduction) would settle (1)
+outright and was the natural next step, but did not happen this session — by
+the time the client radio was stable enough for a controlled test, the
+priority was validating the fix build, and session time ran out first. That
+remains the single highest-value next step, now that a second radio actually
+exists in this environment and the process pitfalls above are documented.
+
+**Kept from this round, not reverted:** the three sdkconfig changes above
+(harmless, and the WDT idle-check is real resilience independent of root
+cause) and the `LWIPSTATS` console command (already proved its worth —
+keep using it on any future reproduction attempt, ideally *before* assuming
+a buffer/memory theory again, since this round's data already argues against
+one).

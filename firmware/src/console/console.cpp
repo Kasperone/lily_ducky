@@ -7,6 +7,7 @@
 #include "config.h"
 #include "storage/storage.h"
 #include "recon/recon.h"
+#include "lwip/stats.h"  // TEMP DIAGNOSTIC (open-questions.md #9): LWIPSTATS command
 
 static char _line[80];
 static size_t _lineLen = 0;
@@ -112,6 +113,22 @@ static void handlePmfDown()
     }
 }
 
+// `LWIPSTATS` — dumps lwIP's internal pbuf/memp/proto counters to serial.
+// CONFIG_LWIP_STATS=y (platformio.ini) enables collection; this triggers
+// stats_display() (lwIP's own dump, routed through its platform diag macro
+// to this same serial console) on demand. Added while investigating
+// open-questions.md #9 (C5 SoftAP goes deaf for a real external client after
+// one request) — kept as a permanent tool, not reverted, since it already
+// proved useful there: it showed zero drops/errors anywhere in lwIP's own
+// accounting during a live reproduction, which is exactly the kind of
+// on-device evidence that's otherwise impossible to get without a debugger.
+static void handleLwipStats()
+{
+    Serial.println("[LWIPSTATS] ---- begin ----");
+    stats_display();
+    Serial.println("[LWIPSTATS] ---- end ----");
+}
+
 static void dispatch(const String& line)
 {
     if (line.startsWith("DUMP ")) {
@@ -124,6 +141,8 @@ static void dispatch(const String& line)
         handlePmfDown();
     } else if (line == "PMF") {
         handlePmf();
+    } else if (line == "LWIPSTATS") {
+        handleLwipStats();
     }
     // Unrecognized lines are ignored — this console shares the port with
     // the normal boot/status log, so silently ignoring stray input (rather
