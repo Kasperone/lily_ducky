@@ -53,8 +53,17 @@ total from the AP — uplink (lwIP RX) is fully healthy, so the fault is the WiF
 driver's **AP→STA downlink TX path, below lwIP** (`esp_wifi_internal_tx()`
 returns OK but frames don't reach the station). This rules out the Arduino
 `WebServer`/`NetworkClient` accept-state theory (lwIP's own SYN-ACKs never
-leave) and confirms an ESP-IDF/driver-level bug. Next lead is direct driver-TX
-instrumentation; an independent monitor radio remains a tie-breaker only —
+leave) and confirms an ESP-IDF/driver-level bug. That direct driver-TX
+instrumentation is now built and flashed: **`TXSTATS`/`TXRESET`** console
+commands (commit `65e0222`) dump the WiFi driver's per-frame TX-done callback
+(`ok`=transmitted+ACKed, `fail`=transmitted+not-ACKed) — the layer below lwIP.
+Confirmed working on the C5 (`AP if1 ok=5/fail=0` for association EAPOL frames).
+**RESUME HERE:** the decisive wedge measurement is not yet captured — the client
+Alfa/rtw88 adapter can't complete a WPA2 4-way handshake after this session's
+USB churn (`reason=15`, PSK provably correct); it needs a **host-level USB
+detach/reattach of the Alfa** (guest-side module reload + usbreset didn't clear
+it). Once a client can associate: `TXRESET` → request train → `TXSTATS` (+
+`LWIPSTATS` + client pcap). An independent monitor radio remains a tie-breaker only —
 see `docs/knowledge-base/open-questions.md` #9 for the full investigation
 (now including this round), what was ruled out, a separate real bug found
 along the way (SD-flush blocking `loop()` for 3+ seconds in
