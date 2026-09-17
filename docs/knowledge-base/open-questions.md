@@ -948,3 +948,58 @@ monitor capture *would* still close, at the end.
 raw capture, three LWIPSTATS blocks, and event log from this run are in the
 session scratchpad. No firmware changed this session (LWIPSTATS + onEvent were
 already committed); nothing to revert.
+
+### Update 2026-09-17 (second session, cont.) — driver TX-done instrumentation added, flashed, and confirmed working; wedge measurement blocked by the client adapter (rtw88) failing its WPA2 4-way handshake after this session's USB churn
+
+Built the next step the update above called for — direct visibility into the
+WiFi driver's TX path, below lwIP — as two permanent serial commands (commit
+`65e0222`):
+- **`TXSTATS`** dumps the driver's per-frame TX-done callback
+  (`esp_wifi_set_tx_done_cb`) counters, per interface: `ok` = MAC transmitted
+  **and** the peer ACKed, `fail` = transmitted, not ACKed. This is the layer
+  `LWIPSTATS` cannot see; it splits the three remaining possibilities — (a)
+  frames never reach the MAC (counts stay ~0 while lwIP `xmit` climbs), (b) MAC
+  transmits but station never ACKs (`fail` climbs → below the driver's TX
+  handoff), (c) transmitted + ACKed (`ok` climbs → loss is on-air/client-side,
+  the only case still needing a monitor radio).
+- **`TXRESET`** zeroes the counters so one request window can be isolated.
+
+**Confirmed working on hardware:** flashed to the C5, `tx_done_cb register: ok
+(0x0)` at boot, and a first live read returned `AP(if1) ok=5 fail=0` for the
+frames the AP sent during a client's association attempt (EAPOL). So the
+instrumentation is functioning and already gave one real data point: **the AP's
+early/handshake downlink frames transmit and are ACKed** — consistent with the
+"works at first, then wedges" shape, where the wedge would show up on the
+later data-path frames. The decisive full measurement (TXSTATS read at a live
+HTTP wedge, cross-checked against LWIPSTATS + client pcap) is **not yet
+captured** — see the blocker.
+
+**Blocker (environmental, not the firmware bug):** after this session's heavy
+USB churn — the C5's own USB-Serial-JTAG console needed a vid:pid `usbreset` to
+come back (the documented "node present, no data" state), and the Alfa
+re-enumerated `wlp3s0u5`→`wlp3s0u4`, `phy2`→`phy0`→`phy1` across resets — the
+Alfa/rtw88_8821au client can no longer complete a **WPA2 4-way handshake** with
+the C5 SoftAP. It associates at the 802.11 level, then the EAPOL 4-way times
+out (`wpa_supplicant reason=15`, "4-Way Handshake failed - PSK may be
+incorrect") every time, so the C5 never reaches `AP_STACONNECTED` and no data
+path ever comes up. This reproduced across: guest-side `modprobe -r/modprobe
+rtw88_8821au` (×2), `usbreset 0bda:0811`, a **fresh C5 reboot** (rules out
+AP-side WPA state corruption — a clean AP fails identically), a single
+`wpa_supplicant` instance with the correct known PSK (same hash that associated
+fine earlier this same day), and NetworkManager confirmed `unmanaged`. The
+key that "may be incorrect" is provably correct; this is the adapter's crypto
+state stuck, matching the pre-existing note that rtw88 "occasionally needs a
+full kernel module reload… usbreset and interface down/up alone aren't always
+enough." Here even the module reload didn't clear it — the next lever is a
+**host-level USB detach/reattach of the Alfa** (or a physical re-plug / a
+different client device), which can't be done from inside the guest.
+
+**So, for the next session (tooling is now in place, just needs a healthy
+client):** get the Alfa reattached at the host (or use another WPA2 client),
+re-establish the both-sides-confirmed stable association from the prior update,
+then: `TXRESET` → drive the request train → `TXSTATS` at the wedge, alongside
+`LWIPSTATS` and a client-side pcap. Expected discriminator: if `AP fail` climbs
+while `ok` stays flat, the MAC is transmitting data frames the station never
+ACKs (loss below lwIP's handoff, at TX/RF); if `AP ok` climbs with the client
+still receiving nothing, the frames are ACKed yet lost — the sole case that
+would finally require the independent monitor radio.
