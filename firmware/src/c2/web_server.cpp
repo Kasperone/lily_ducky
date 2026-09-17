@@ -20,6 +20,7 @@
 #include "web_server.h"
 #include "recon/recon.h"
 #include <esp_wifi.h>
+#include <esp_private/wifi.h>  // esp_wifi_set_tx_done_cb() — open-questions.md #9
 #include <uri/UriBraces.h>  // {} path-arg matching — a bare String route is
                             // matched LITERALLY (Uri::canHandle is _uri ==
                             // requestUri), so "/api/payload/(.*)" only ever
@@ -613,6 +614,55 @@ static void handleNotFound()
 // disconnect, the driver's reason code (802.11 reason codes, e.g. 2 =
 // PREV_AUTH_NOT_VALID, 4 = INACTIVITY, 8 = DISASSOC_STA_HAS_LEFT), so a
 // flapping station shows up as more than just a number on the dashboard.
+// ── open-questions.md #9: driver-level TX-done accounting ────────────────────
+// lwIP reports transmitting frames with zero errors (LWIPSTATS TCP xmit:217,
+// drop:0), yet a healthy associated external station receives almost none of
+// them (client pcap: 2 frames of ~219). This hooks the WiFi driver's per-frame
+// TX-done callback — the layer *below* lwIP — to record, per interface, how
+// many frames the MAC reports it transmitted and whether each was ACKed by the
+// peer (txStatus). It splits the three possibilities the client-side evidence
+// alone can't: (a) frames never reach the MAC (callback never fires while lwIP
+// xmit climbs), (b) MAC transmits but the station never ACKs (fail count
+// climbs — points below the driver's TX handoff to the RF/peer), or (c) MAC
+// transmits and is ACKed (ok count climbs — loss is then on-air/client-side,
+// the only case still needing a monitor radio).
+//
+// Runs in the WiFi task context: keep it to counter increments, no Serial.
+static volatile uint32_t s_txDoneOk[2]   = {0, 0};  // [ifidx] transmitted + ACKed
+static volatile uint32_t s_txDoneFail[2] = {0, 0};  // [ifidx] transmitted, not ACKed
+static volatile uint32_t s_txDoneOther   = 0;       // ifidx outside [0,1] (unexpected)
+
+static void txDoneCb(uint8_t ifidx, uint8_t* data, uint16_t* data_len, bool txStatus)
+{
+    (void)data;
+    (void)data_len;
+    if (ifidx < 2) {
+        if (txStatus) s_txDoneOk[ifidx]++;
+        else          s_txDoneFail[ifidx]++;
+    } else {
+        s_txDoneOther++;
+    }
+}
+
+void C2Server::printTxStats()
+{
+    Serial.println("[TXSTATS] ---- begin ----");
+    Serial.printf("  STA(if0) ok=%u fail=%u\n",
+                  (unsigned)s_txDoneOk[0], (unsigned)s_txDoneFail[0]);
+    Serial.printf("  AP (if1) ok=%u fail=%u\n",
+                  (unsigned)s_txDoneOk[1], (unsigned)s_txDoneFail[1]);
+    Serial.printf("  other    %u\n", (unsigned)s_txDoneOther);
+    Serial.println("[TXSTATS] ---- end ----");
+}
+
+void C2Server::resetTxStats()
+{
+    s_txDoneOk[0] = s_txDoneOk[1] = 0;
+    s_txDoneFail[0] = s_txDoneFail[1] = 0;
+    s_txDoneOther = 0;
+    Serial.println("[TXSTATS] counters reset");
+}
+
 static void onApStaEvent(WiFiEvent_t event, WiFiEventInfo_t info)
 {
     if (event == ARDUINO_EVENT_WIFI_AP_STACONNECTED) {
@@ -674,6 +724,13 @@ bool C2Server::start()
     WiFi.onEvent(onApStaEvent, ARDUINO_EVENT_WIFI_AP_STADISCONNECTED);
 
     startSoftApRadio();
+
+    // open-questions.md #9: register the driver TX-done callback once here
+    // (single global slot; must be after esp_wifi_start(), which WiFi.softAP()
+    // above performs). See txDoneCb() above for what this measures.
+    esp_err_t txCbErr = esp_wifi_set_tx_done_cb(txDoneCb);
+    Serial.printf("[C2] tx_done_cb register: %s (0x%x)\n",
+                  txCbErr == ESP_OK ? "ok" : "FAILED", txCbErr);
 
     generateToken();
     Serial.printf("[C2] Auth token: %s\n", _authToken);
