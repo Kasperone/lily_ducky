@@ -46,7 +46,31 @@ answering anything (ARP/ICMP/TCP) for every request after that — a precise
 "works once, then wedges" pattern, not pure randomness. A three-part fix
 attempt (TX buffer headroom, WDT idle-task coverage, `lwip_stats`
 instrumentation — see `platformio.ini`'s `custom_sdkconfig` comment) did not
-resolve it. **Root cause now LOCALIZED (2026-09-17, 2nd session):** on a
+resolve it.
+
+> **✅ #9 RESOLVED 2026-11-05 — flashed + SoftAP regress PASS; read this before the investigation log below.**
+> The wedge was the **arduino-esp32 WiFi wrapper + the prebuilt Arduino
+> WiFi/PHY blobs**, not sdkconfig and not the C2 HTTP / `WebServer` layer.
+> Aligning WiFi config toward the working minimal IDF demo made the Arduino
+> build *worse* (Guru panic in `ieee80211_hostap_attach` at `esp_wifi_start`),
+> while the same board running plain `esp_netif` + `esp_wifi` from source
+> associates and serves HTTP indefinitely.
+>
+> **Fix in-tree:** env **`T-Dongle-C5-idf`** (`framework = espidf`, no Arduino
+> core), sources in `firmware/src/idf_softap/` (own README), 2 MiB factory
+> (`firmware/idf_softap_partitions.csv`), SPIRAM **off** via
+> `firmware/idf_softap_sdkconfig.defaults`. Builds clean, `firmware.bin` ≈
+> 1.11 MB, 145/145 WiFi/LWIP sdkconfig keys byte-identical to the hybrid.
+>
+> **Flashed and SoftAP-regressed PASS on win11+Hama (2026-11-05):** DHCP
+> 192.168.4.6; HTTP 200 on `/` `/raw` `/api/status` `/api/payloads`; recon
+> scan+enum+capture held SoftAP; authenticated pcap GET 200 (libpcap
+> magic/Content-Type); 401 without auth; 404 missing. Device left on that
+> image. Arduino `T-Dongle-C5` kept as the #9 SoftAP reproducer.
+> Detail: `docs/knowledge-base/issue-9-softap-findings.md` +
+> `issue-9-RESUME.md`; the log below is the evidence trail.
+
+**Root cause now LOCALIZED (2026-09-17, 2nd session):** on a
 both-sides-confirmed clean wedge, lwIP reported transmitting 217 TCP segments
 (SYN-ACKs+retransmits) with zero errors while the client received only 2 frames
 total from the AP — uplink (lwIP RX) is fully healthy, so the fault is the WiFi
@@ -296,7 +320,19 @@ pio run --environment T-Dongle-S3            # full HID target
 pio run --environment T-Dongle-C5 --target upload
 # C2 REST API end-to-end self-test on hardware (no WiFi client needed):
 pio run -e T-Dongle-C5-selftest -t upload    # then capture serial for [PASS]/[FAIL]
+# SoftAP + C2 that actually works over the air (#9 fix, from-source ESP-IDF):
+pio run -e T-Dongle-C5-idf                   # see src/idf_softap/README.md
 ```
+
+`T-Dongle-C5-idf` is the **only** env with a working SoftAP (#9). It shares
+nothing with the Arduino C5 build except the board and the platform package:
+its sources are a self-contained ESP-IDF component in `firmware/src/idf_softap/`,
+its partition table is `firmware/idf_softap_partitions.csv` (2 MiB factory, no
+OTA), and its sdkconfig comes from `firmware/idf_softap_sdkconfig.defaults`
+(passed as `-DSDKCONFIG_DEFAULTS`; PlatformIO ignores `custom_sdkconfig` under
+`framework = espidf`). The `[env]`-level `build_src_filter` excludes
+`src/idf_softap/` from every Arduino env and the new env clears that option
+(ESP-IDF warns about it and doesn't use it).
 
 Platform note: platformio.ini uses the **pioarduino fork** release URL (55.03.311) —
 official platformio/espressif32 doesn't support ESP32-C5. Board JSONs are vendored in
@@ -328,6 +364,14 @@ source of truth). The `T-Dongle-S3` env is unaffected (still precompiled).
 - Keyboard layout: default US breaks on PL/DE/etc. — watch for garbage chars
 
 ## Gotchas
+- **The C5 SoftAP only works in the `T-Dongle-C5-idf` env.** The Arduino C5
+  build's SoftAP associates then goes permanently deaf (issue #9 / open-questions
+  #9); do not "fix" it there. Two traps specific to that env: PlatformIO
+  **silently ignores `custom_sdkconfig` when `framework = espidf`** (use
+  `board_build.cmake_extra_args = "-DSDKCONFIG_DEFAULTS=..."` instead), and
+  editing `idf_softap_sdkconfig.defaults` does **not** trigger a CMake
+  re-configure — delete `firmware/sdkconfig.T-Dongle-C5-idf` or run
+  `pio run -e T-Dongle-C5-idf -t clean` first or your change is ignored.
 - **ESP32-C5 has NO USB-OTG** — never plan HID/MSC/VID-PID features for it; check
   `CFG_HAS_USB_HID` before writing USB-dependent code
 - BACKSPACE scancode is 0x2a, ESC is 0x29

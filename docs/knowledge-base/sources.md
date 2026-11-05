@@ -99,3 +99,29 @@ resolved the LED question by testing rather than reading further sources:
 - Commits `c489531`, `fb6ec7b` — Arduino-ESP32 3.x API drift fixes (USB HID API, namespace/forward-declare, `File::name()` return type, UTF-8 literal removal).
 - Commit `cf2f446` — TFT_eSPI vendoring for C5 support.
 - `AGENTS.md`, `CONTRIBUTING.md`, `docs/programming-style.md` — this repo's own architecture/convention docs; treat as authoritative for *this codebase's* decisions, cross-check against the external sources above only for hardware/vendor-library facts.
+
+
+## DuckyScript / BadUSB payload language (added 2026-10-30, see duckyscript-v3.md)
+
+- [Hak5 - DuckyScript Quick Reference](https://documentation.hak5.org/hak5-usb-rubber-ducky/duckyscript-tm-quick-reference) - v3 command set; **page returned truncated 2026-10-30**, treat the exhaustive advanced-command list as unconfirmed.
+- [Hak5 - Operators/Conditions/Loops/Functions](https://documentation.hak5.org/hak5-usb-rubber-ducky/operators-conditions-loops-and-functions/functions) - VAR/IF/WHILE/FUNCTION semantics, global variables.
+- [Hak5 - USB Rubber Ducky docs root](https://documentation.hak5.org/hak5-usb-rubber-ducky) - version/compatibility matrix, ATTACKMODE.
+
+## USB HID keyboard injection (added 2026-10-30, see hid-keyboard-injection.md)
+
+- [Linux kernel - HID report descriptors intro](https://docs.kernel.org/hid/hidintro.html) - report-descriptor model.
+- [OSDev - USB Human Interface Devices](https://wiki.osdev.org/USB_Human_Interface_Devices) - 8-byte boot keyboard report, modifier bitfield (bit 6 = R-Alt/AltGr).
+- [duckyPad - Making Your Own Keymap](https://dekunukem.github.io/duckyPad/keymap_instructions.html) - Usage ID = physical key position, not character; duckcode (SHIFT/AltGr/dead-key bits). Primary reasoning for the PL-layout problem.
+- [Espressif ESP-USB device stack (ESP32-S3)](https://docs.espressif.com/projects/esp-usb/en/latest/esp32s3/usb_device.html) - native USB HID via TinyUSB on the S3 target.
+
+## BadUSB defensive detection/prevention (added 2026-10-30, see defensive-detection.md)
+
+- [Linux kernel - Authorizing (or not) your USB devices](https://docs.kernel.org/usb/authorization.html) - authorized / authorized_default / usbcore.authorized_default.
+- [USBGuard - Rule Language](https://usbguard.github.io/documentation/rule-language) - first-match allow/block/reject, hash/via-port/with-interface.
+- [RHEL 9 Security hardening - USBGuard](https://docs.redhat.com/en/documentation/red_hat_enterprise_linux/9/html/security_hardening/protecting-systems-against-intrusive-usb-devices_security-hardening) - deployment.
+- [MITRE ATT&CK DET0568 - Input Injection (T1674)](https://attack.mitre.org/detectionstrategies/DET0568/) - new-HID + fast-input + execve correlation.
+- [Microsoft - Manage Device Installation with Group Policy](https://learn.microsoft.com/en-us/windows/client-management/client-tools/manage-device-installation-with-group-policy) - Device Installation Restrictions; keyboard-class caveat.
+- [Microsoft - Event 6416](https://learn.microsoft.com/en-us/previous-versions/windows/it-pro/windows-10/security/threat-protection/auditing/event-6416) - PnP device audit.
+- [Microsoft - Defender for Endpoint device control](https://learn.microsoft.com/en-us/defender-endpoint/device-control-overview) - does NOT cover HID.
+- [DuckHunt](https://github.com/pmsosa/duckhunt) - inter-keystroke timing detector.
+- [Keynterceptor whitepaper, HITB 2018](https://conference.hitb.org/files/hitbsecconf2018ams/materials/WHITEPAPERS/WHITEPAPER%20-%20Niels%20van%20Dijkhuizen%20-%20Keynterceptor%20-%20Press%20Any%20Key%20to%20Continue.pdf) - descriptor cloning / timing evasion limits.

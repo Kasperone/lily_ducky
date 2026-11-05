@@ -172,6 +172,14 @@
 #define CFG_C2_SELFTEST     0
 #endif
 
+// open-questions.md #9 bisect: strip concurrent peripheral/CPU load
+// (LCD/SD/recon/interpreter) and yield in loop(), keeping only the Arduino
+// WiFi SoftAP + WebServer + Console. Isolates app CPU/SPI starvation from the
+// Arduino WiFi/WebServer stack itself. Reversible; off by default.
+#ifndef CFG_C2_MIN_REPRO
+#define CFG_C2_MIN_REPRO    0
+#endif
+
 // ── DuckyScript interpreter defaults ────────────────────────────────────────
 
 #define CFG_DEFAULT_DELAY     200     // ms between commands (pre-Duckyscript v2)
