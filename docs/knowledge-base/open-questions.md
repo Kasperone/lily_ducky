@@ -595,7 +595,34 @@ issue #18.
 >   uncapturable without JTAG/gdbstub — not pursued, as the from-source build
 >   sidesteps the bug entirely.
 
-## 9. OPEN — C2 REST API's HTTP layer intermittently fails for a real external WiFi client; root cause not yet found, and this dev VM lacks the tooling to find it
+## 9. RESOLVED 2026-11-05 — root cause was the Arduino WiFi stack, not the C2 HTTP layer; fixed by a from-source ESP-IDF SoftAP env (`T-Dongle-C5-idf`)
+
+> **Resolution summary (read this first; the investigation log below is kept
+> as-is for the evidence trail).**
+>
+> **Root cause:** the arduino-esp32 WiFi wrapper plus the prebuilt Arduino
+> WiFi/PHY/MAC blobs — **not** the C2 HTTP layer / `WebServer`/`NetworkClient`.
+> Aligning sdkconfig toward the working minimal IDF demo did not fix SoftAP
+> (and instead Guru-panicked Arduino at `esp_wifi_start`); the same board on
+> plain from-source `esp_netif` + `esp_wifi` associates and serves HTTP
+> indefinitely.
+>
+> **Fix:** main-tree PlatformIO env `T-Dongle-C5-idf` (`framework = espidf`,
+> no Arduino core), sources under `firmware/src/idf_softap/`, SPIRAM off,
+> 2 MiB factory partition. Builds clean; 145/145 WiFi/LWIP sdkconfig keys
+> byte-identical to the hardware-passed hybrid.
+>
+> **Flashed and SoftAP-regressed PASS on win11+Hama (2026-11-05):** DHCP
+> 192.168.4.6; HTTP 200 on `/`, `/raw`, `/api/status`, `/api/payloads`; recon
+> scan + enum + capture held SoftAP; authenticated pcap GET 200 with libpcap
+> magic/Content-Type; 401 without auth; 404 for missing name. Device left on
+> that image.
+>
+> Arduino env `T-Dongle-C5` is unchanged and kept as the #9 reproducer.
+>
+> Detail: `issue-9-softap-findings.md` + `issue-9-RESUME.md`.
+
+**Original opening as written** — `## 9. OPEN — C2 REST API's HTTP layer intermittently fails for a real external WiFi client; root cause not yet found, and this dev VM lacks the tooling to find it`
 
 **Where:** `firmware/src/c2/web_server.cpp` (`WebServer::handleClient()` via the
 vendored arduino-esp32 `WebServer`/`NetworkClient` libraries), C5 SoftAP.
@@ -1047,3 +1074,155 @@ everything above. If the other client associates fine, the Alfa is the blocker
 and needs a host-level (VM-outside) USB reattach. The TXSTATS/LWIPSTATS/pcap
 measurement procedure from the previous update is unchanged and ready to run the
 moment any client can associate.
+
+### Update 2026-10-30 — reproduced on Win11 + Hama RTL8188EUS (Alfa exonerated); permanent SSH into win11
+
+**Client change (decisive for the adapter question):** SoftAP client was **Win11 VM** with USB WiFi **Hama / Realtek RTL8188EUS (`0bda:8179`)**, not the Alfa/rtw88 stick. OpenSSH Server was enabled on win11 (`trash@192.168.1.153` over br0/Ethernet) so curls were driven remotely from the host without paste-each-time.
+
+**Reproduction (clean SoftAP boot, Wi-Fi stayed `Up` at `192.168.4.50` through the train):**
+1. C5 SoftAP `Lily` up (`OK — 192.168.4.1`, `tx_done_cb register: ok`).
+2. Win11 associated; `Get-NetAdapter Wi-Fi` = `Up`, IPv4 `192.168.4.50`.
+3. `TXRESET` then 4× `curl.exe -m 4 http://192.168.4.1/api/status` from win11 over SSH:
+   - `[1] code=000 connect≈0.015s starttransfer=0` (TCP connect attempted, no HTTP body)
+   - `[2..4] code=000 connect=0` (connect-phase failure)
+4. Immediate `ping 192.168.4.1` from win11: **timeout**, while Wi-Fi adapter still `Up`.
+5. `LWIPSTATS` shortly after: `IP xmit:193` / `recv:55`, `drop/memerr/err:0` across sampled sections — same "lwIP believes it transmitted; client receives almost nothing" signature as 2026-09-17.
+
+**What this adds:**
+- **Alfa/rtw88 is not required for the wedge.** A second, independent WPA2 client hits the same SoftAP downlink failure → points at **ESP32-C5 SoftAP / WiFi-driver downlink TX**, consistent with the prior localization below lwIP.
+- Permanent lab path: `ssh trash@192.168.1.153` from the Alienware host (admin authorized_keys). SoftAP traffic stays on the Wi-Fi NIC; SSH stays on Ethernet/br0.
+- Operational note: RTS reset can drop USB-Serial-JTAG mid-boot; wait for `HTTP server started` / `OK — 192.168.4.1` before associating. Do not leave `scripts/serial_monitor.py` running long (busy CPU); use short probe or select()-based quiet logger.
+
+**Still open (unchanged locus):** whether undelivered frames are dropped inside the driver before PHY or TXed but lost — needs TXSTATS read in a tighter window around the first failing request (this session's TXSTATS drains were incomplete / raced with LWIPSTATS). Next: Sherlock/upstream search for C5 SoftAP downlink TX + `esp_wifi_internal_tx` silent success; then tighter TXSTATS harness.
+
+
+### Update 2026-10-30 (cont.) — `WIFI_PS_NONE` workaround tried, did not fix
+
+Flashed `esp_wifi_set_ps(WIFI_PS_NONE)` immediately after `WiFi.softAP()` (`web_server.cpp` `startSoftApRadio`). Boot log shows `[ps=NONE]` and SoftAP `OK — 192.168.4.1`. Retest with win11+Hama (`Up`, `192.168.4.50`): 7× `curl /api/status` all `code=000` (first TCP connect ~19ms then stall; later connect=0); ping timeout while association stayed Up. Same downlink signature as before. Sherlock workaround #1 (SoftAP PS buffer / #6852/#13198) is **ruled out as sufficient** for this board. Next: sdkconfig dynamic TX buffers + `CONFIG_ESP_WIFI_AMPDU_TX_ENABLED=n` (Sherlock #3/#4), still citing IDFGH-18499 / esp-idf#19267 as the likely root cause.
+
+### Update 2026-10-30 (cont.) — dynamic TX + AMPDU TX off tried, did not fix
+
+Built and flashed with `platformio.ini` `custom_sdkconfig`:
+`CONFIG_ESP_WIFI_DYNAMIC_TX_BUFFER=y`, `CONFIG_ESP_WIFI_DYNAMIC_TX_BUFFER_NUM=64`,
+`CONFIG_ESP_WIFI_AMPDU_TX_ENABLED=n`, still with runtime `WIFI_PS_NONE` (`[ps=NONE]` on boot).
+
+**Retest (win11 + Hama, after `probe_reset.py` SoftAP `OK — 192.168.4.1`):**
+1. Assoc flaky for several minutes post-flash (netsh "success" but adapter `Disconnected`); SoftAP still beaconed (`SSID: Lily`, ch6, ~−32 dBm on Alfa scan).
+2. Once associated: Wi-Fi `192.168.4.50`, C5 serial `[C2] station connected: 80:3F:5D:13:3B:34 (aid=1)`.
+3. One early `curl http://192.168.4.1/` observed `HTTP/1.1 200 OK` (rare); subsequent trains after reconnect: 5× `code=000` / timeout with 0 bytes, `ping 192.168.4.1` timeout while DHCP address still present or after reconnect still `192.168.4.50` then stall.
+4. After a failing train: `TXSTATS` AP `ok=0 fail=0` (or only a few `ok` when a rare response landed); `LWIPSTATS` still shows substantial `IP`/`ETHARP` `xmit` with no lwIP `drop`/`memerr` — same below-lwIP downlink signature.
+
+**Conclusion:** Sherlock workarounds #3/#4 (dynamic TX buffers + AMPDU TX disabled) are **not sufficient** on this C5 SoftAP build (pioarduino / IDF 5.5 Arduino). Issue remains open; locus still SoftAP AP→STA TX below lwIP (IDFGH-18499 / esp-idf#19267 family). Next candidates: try IDF master / newer WiFi lib if available via the Arduino platform, or a minimal SoftAP-only IDF example on the same hardware to separate app vs driver.
+
+
+### Update 2026-10-30 (cont.) — minimal IDF SoftAP+httpd on same C5: **no wedge** → points at lily_ducky app/stack
+
+**Goal:** separate app-specific SoftAP path from ESP32-C5 / IDF 5.5.5 WiFi SoftAP driver.
+
+**What was flashed (scratch project, lily tree untouched aside from reading SSID from `config_secret.h`):**
+- Path: `/home/op/scratch/c5_softap_min` (PlatformIO `framework = espidf`, same pioarduino `55.03.311`, board `Lilygo-T-Dongle-C5` via copied `boards/Lilygo-T-Dongle-C5.json`)
+- Stock-style SoftAP + tiny `esp_http_server` on `:80` (`/` and `/api/status` → `{"min":1,"hits":N}`)
+- SSID reused as `Lily` (same lab WLAN profile); channel 6; WPA2-PSK; default `WIFI_INIT_CONFIG_DEFAULT()` (no lily app layers, no WebServer.cpp, no PS/`AMPDU`/TX tweaks)
+- Boot (ESP-IDF **5.5.5**): `wifi:mode : softAP`, DHCP `192.168.4.1`, serial `SOFTAP_UP` + `HTTPD_UP :80`
+
+**Win11 + Hama RTL8188EUS retest (SSH `trash@192.168.1.153`, Ethernet for SSH):**
+1. Assoc: Wi-Fi got `192.168.4.50`; C5 serial `alive sta=1`
+2. Train A: 5× `Invoke-WebRequest http://192.168.4.1/` → **all HTTP 200**, ~60–117 ms, `hits` 1→5; ping 4/4 (~2–9 ms)
+3. Train B: 20× `http://192.168.4.1/api/status` → **ok=20 fail=0**, `hits` 6→25; ping 6/6
+4. Follow-up: hits continued to 28; serial `alive sta=1 hits=28` — no disconnect, no downlink stall in this session
+
+**Conclusion for #9:** On this same T-Dongle-C5 + IDF 5.5.5 SoftAP, a **minimal SoftAP+httpd does not reproduce** the AP→STA wedge seen with lily_ducky under the same client. That strongly points to **lily_ducky app/stack** (Arduino `WebServer` / C2 SoftAP bring-up / concurrent features), **not** a bare ESP32-C5 SoftAP driver failure on IDF 5.5.5. Issue stays OPEN until lily is reduced or the offending path is identified; do **not** treat #9 as fixed. Device currently runs the minimal image — reflash lily firmware when continuing lily debugging.
+
+
+### Update 2026-10-30 (cont.) — bisect: wedge survives stripping the entire lily app layer AND reverting WiFi sdkconfig to minimal defaults → locus is the Arduino WiFi/WebServer stack, not app/config
+
+**Goal:** given minimal IDF SoftAP+httpd on this same C5 does NOT wedge but lily does, bisect which lily-only difference reintroduces the AP->STA downlink wedge.
+
+**Ranked suspects from the lily-vs-minimal diff:**
+1. Concurrent CPU/SPI load on a single-core chip — lily runs a hot `loop()` with no yield, calling `Display::update()` (TFT_eSPI SPI @27MHz) every iteration plus interpreter/recon/button; minimal's app task sleeps 10s, leaving WiFi a near-idle CPU.
+2. Arduino `WebServer` (synchronous, polled in loop) + Arduino `WiFi.softAP` bring-up (arduino-esp32 netif/event glue) vs raw `esp_wifi` + `esp_http_server`.
+3. lily-only runtime tweaks: `esp_wifi_set_ps(WIFI_PS_NONE)` + `esp_wifi_set_tx_done_cb`.
+4. lily-only `custom_sdkconfig` TX overrides (dynamic TX buffers, AMPDU-TX off).
+5. PSRAM-on + SD/LCD/bit-banged-APA102 SPI bus sharing.
+
+**Reversible instrumentation added (all off by default, kept for reuse):**
+- `CFG_C2_MIN_REPRO` build flag (config.h) + guards in `main.cpp`: skip SD, Display init, recon/interpreter/display/button work; loop() only ticks `C2Server` + `Console` and `delay(2)` (yields the single core).
+- platformio envs: `T-Dongle-C5-c2min` (= default C5 WiFi config + stripped app) and `T-Dongle-C5-c2min-stock` (stripped app + custom_sdkconfig reverted to IDF/minimal WiFi defaults: static TX buffers, AMPDU-TX enabled; one benign entry kept so pioarduino still builds Arduino from source, issue #18).
+
+**Test A — `T-Dongle-C5-c2min` (stripped app, default lily WiFi config):** Boot clean (`[ps=NONE] OK — 192.168.4.1`, `tx_done_cb register: ok`, `HTTP server started`; no SD/LCD logs = gating confirmed). Win11+Hama associated (Wi-Fi Up, 192.168.4.50). `TXRESET` then 10x `curl /api/status` -> **10/10 code=000**; `ping 192.168.4.1` **4/4 lost**; association stayed Up. **`TXSTATS`: AP(if1) ok=0 fail=0** (MAC transmitted zero downlink frames the whole train); `LWIPSTATS` ETHARP xmit with 0 drop/0 memerr. -> Suspect #1 (app CPU/SPI load) and the entire app layer (interpreter/SD/LCD/recon) **refuted**.
+
+**Test B — `T-Dongle-C5-c2min-stock` (stripped app + WiFi sdkconfig = minimal defaults):** Boot clean. Win11+Hama associated (Up, 192.168.4.50). `TXRESET` then 10x `curl /api/status` -> **10/10 code=000**; `ping` **4/4 lost**; **`TXSTATS`: AP(if1) ok=0 fail=0** again. -> Suspects #4 (custom_sdkconfig TX/AMPDU) and #3's PS override **refuted** as the cause.
+
+**Conclusion (narrowed, not yet fixed):** With the app layer stripped and the WiFi sdkconfig made equivalent (for the TX path) to the working minimal, the wedge still reproduces identically on the SAME hardware/IDF 5.5.5. The remaining material difference from the non-wedging minimal is the **Arduino WiFi/WebServer stack** itself — `WiFi.softAP()` bring-up via the arduino-esp32 core's netif/event-loop glue, and/or the Arduino `WebServer`/`NetworkClient` TCP path — rather than lily application code, concurrent peripherals, CPU/SPI starvation, PS mode, or TX-buffer/AMPDU config. #9 stays OPEN.
+
+**Cheapest decisive next step:** add a tiny raw-`esp_http_server` route to the Arduino build (keep `WiFi.softAP` Arduino bring-up, bypass the Arduino `WebServer`) and retest: if that route answers while `WebServer` routes wedge, the fault is the Arduino `WebServer`/`NetworkClient` layer; if it also wedges, the fault is in `WiFi.softAP`/arduino-esp32 netif bring-up (point fix at the pioarduino arduino-esp32 WiFi init, e.g. compare its SoftAP esp_netif/mode setup and whether it leaves a STA netif/AP_STA mode active vs the minimal's pure WIFI_MODE_AP). TXSTATS AP ok=0 in both A and B says frames never reach the MAC, consistent with a netif/driver-handoff issue in the Arduino bring-up.
+
+**Device state:** C5 currently runs `T-Dongle-C5-c2min-stock` (a stripped lily image). Reflash `T-Dongle-C5` (full lily) or `c5_softap_min` as needed when continuing. No git commit; branch `docs/wifi-hang-fix-attempt` has the new flag, guards, and two envs (reversible; delete the flag + envs to revert).
+
+### Update 2026-10-30 (cont.) — decisive A/B: raw `esp_http_server` added; HTTP train blocked by SoftAP association failure → locus is Arduino SoftAP/netif bring-up, not WebServer
+
+**What was added (reversible, `CFG_C2_MIN_REPRO` / `T-Dongle-C5-c2min` only):**
+- Raw `esp_http_server` on **:81**, route `GET /raw` → `raw-ok\n`, started from `C2Server::start()` alongside Arduino `WebServer` on **:80** (`/api/status` etc.).
+- SoftAP knobs under the same flag: `max_connection=4`, `WIFI_PS_NONE`, force `WIFI_BAND_MODE_2G_ONLY` + `WIFI_BW_HT20` + `pmf_cfg.required/capable=false` after `WiFi.softAP()` (boot log: `[2g=ok ch=ok ht20=ok pmf_off=ok]`; Alfa scan confirms HT20 / no secondary).
+- (Tried and reverted) a full raw-`esp_wifi` SoftAP bring-up inside the Arduino sketch — got SoftAP beacon but `WiFi.softAPIP()`=`0.0.0.0` and still no association; restored `WiFi.softAP` path.
+
+**HTTP A/B result: could not be measured — SoftAP association itself fails**
+
+After every clean SoftAP boot (`OK — 192.168.4.1`, both HTTP servers up), win11+Hama repeatedly reports `netsh` "Connection request was completed successfully" then **State=disconnected**. WLAN AutoConfig: 8000 → 11000 (assoc started) → **8002 (failed)**. C5 never logs `station connected`. **TXSTATS during attempts: AP(if1) ok=0 fail=0** (no downlink frames leave the MAC — same signature as the HTTP wedge, now hitting the 4-way / EAPOL path).
+
+Alfa (rtw88, from arch-pentest) also fails against this SoftAP (`CTRL-EVENT-DISCONNECTED reason=1` after auth/assoc try).
+
+**Control (same session, same Hama, same host):** flashed `/home/op/scratch/c5_softap_min` → win11 associated in one try (`State=connected`, Signal 100%, DHCP `192.168.4.2`). Then reflashed `T-Dongle-C5-c2min` → association fails again. Hama client is fine; Arduino SoftAP path is not.
+
+**SoftAP / netif diffs vs working minimal (prime suspects):**
+1. **Bring-up path:** lily uses Arduino `WiFi.softAP()` → `APClass::begin/create` → `WiFi.enableAP` / `esp_wifi_set_mode(current|AP)` + arduino-esp32 netif/event glue (`WiFiGeneric` creates default AP netif, optional STA netif objects, LR toggles). Minimal uses pure `esp_netif_create_default_wifi_ap()` + `esp_wifi_set_mode(WIFI_MODE_AP)` + `WIFI_INIT_CONFIG_DEFAULT()` with no Arduino WiFi layer.
+2. **Band mode:** on C5, Arduino default appears to leave `WIFI_BAND_MODE_AUTO` (2.4+5); `esp_wifi_set_bandwidth(HT20)` **fails** until `esp_wifi_set_band_mode(WIFI_BAND_MODE_2G_ONLY)` is forced. Minimal never touches band mode and still associates. Forcing 2G_ONLY+HT20 on lily **did not** restore association.
+3. **RSN:** lily beacon still advertises **MFP-capable** even after `pmf_cfg.capable=false` via `esp_wifi_set_config` (driver may force it on C5). Minimal sets `pmf_cfg.required=false` only.
+4. **Earlier same day:** stripped Arduino SoftAP *did* occasionally associate (DHCP `.50`) then HTTP wedged with TXSTATS AP ok=0 — same below-lwIP downlink failure, just later than EAPOL. Today's consistent assoc failure is the wedge firing at the 4-way.
+
+**Interpretation against the planned discriminator:**
+- Planned: `/raw` works & `/api/status` wedges → blame Arduino WebServer; both wedge → blame SoftAP/netif.
+- Actual: **neither endpoint reachable because SoftAP never completes association** (TXSTATS AP=0 through the handshake). That is the "both wedge" case taken one layer earlier — **blame `WiFi.softAP` / arduino-esp32 SoftAP+netif bring-up**, not the Arduino `WebServer`/`NetworkClient` HTTP layer (which never gets a TCP socket).
+
+**Next cheapest step:** replace Arduino SoftAP bring-up in the default C5 build with the minimal's raw `esp_wifi` SoftAP (proper DHCP/IP via `esp_netif_create_default_wifi_ap`, keep Arduino `WebServer` on top only if association then works), or bisect arduino-esp32 `WiFiGeneric`/`APClass` init (band mode AUTO, dual netif, MFP, wifi_init_config overrides for dynamic TX buffers when `useStaticBuffers()` is false).
+
+**Device state:** C5 runs `T-Dongle-C5-c2min` (stripped app + raw `:81 /raw` + Arduino SoftAP with 2G/HT20/PMF knobs). SoftAP beacons `Lily` @ ch6 / 192.168.4.1; win11 currently **not** associated.
+- Restore full lily: `cd firmware && pio run -e T-Dongle-C5 -t upload`
+- Restore known-good minimal: `cd /home/op/scratch/c5_softap_min && pio run -t upload`
+No git commit.
+
+
+### Update 2026-10-30 (cont.) — replace Arduino SoftAP with minimal-parity raw SoftAP: IP real, association still fails
+
+**Goal (authorized):** cheapest next step after A/B — drop Arduino WiFi.softAP() under CFG_C2_MIN_REPRO and bring SoftAP up with the same raw IDF sequence as working c5_softap_min (esp_netif_init → esp_event_loop_create_default → esp_netif_create_default_wifi_ap → WIFI_INIT_CONFIG_DEFAULT → esp_wifi_init → WIFI_MODE_AP + config SSID/ch6/WPA2/pmf.required=false → esp_wifi_start). Keep raw esp_http_server on port 81 (/raw) and Arduino WebServer on port 80 for HTTP A/B only if association works.
+
+**Code change (firmware/src/c2/web_server.cpp, CFG_C2_MIN_REPRO path):**
+- Never call WiFi.softAP / enableAP / Arduino mode helpers (those go through WiFiGeneric::espWiFiStart(), which on SOC_WIFI_SUPPORT_5G forces WIFI_BAND_MODE_AUTO and creates a default STA netif alongside AP).
+- Read SoftAP IP via esp_netif_get_ip_info(_rawApNetif) (not WiFi.softAPIP()).
+- Station count / AP events via raw WIFI_EVENT_AP_* handler; skip WiFi.onEvent.
+- tx_done_cb, Arduino WebServer routes, and raw esp_http_server port 81 /raw still start after SoftAP.
+
+**Boot (success criterion 1 — met):**
+Boot log showed: wifi_init=ok, mode_ap=ok, cfg=ok, start=ok, raw_min_parity OK — 192.168.4.1; tx_done_cb register ok; HTTP server started; raw esp_http_server started on :81 (/raw); Boot complete.
+SoftAP beacons Lily @ ch6 / HT20 / WPA2; win11 scan sees it at ~100% signal. IP is real 192.168.4.1 (prior incomplete raw attempt that reported 0.0.0.0 was wrong; this sequence matches minimal).
+
+**Association (success criterion 2 — failed):**
+win11 + Hama (RTL8188EU) after Location/lfsvc OK: 8x netsh wlan connect name=Lily → "Connection request was completed successfully" then State=associating → disconnected (never connected; no DHCP .x). During attempts TXSTATS AP(if1) ok=0 fail=0 (no downlink frames leave the MAC — same 4-way signature as the prior Arduino SoftAP assoc failure). No HTTP A/B (criterion 3) — skipped because SoftAP association never completed.
+
+**Related env note (c2min-stock):** same raw SoftAP sequence built as T-Dongle-C5-c2min-stock (custom_sdkconfig reverts lily DYNAMIC_TX / AMPDU-off to IDF static TX defaults) Guru Meditation LoadProhibited mid SoftAP start after [cfg=ok] (before IP print). Stock Arduino+raw SoftAP init is not a usable A/B on this board right now; left on working T-Dongle-C5-c2min (DYNAMIC_TX + AMPDU_TX=n) which boots clean with 192.168.4.1.
+
+**Remaining material diffs vs working c5_softap_min (after this solid attempt — stop, do not thrash):**
+1. Runtime environment: Arduino initArduino / C++ runtime / HAL / Serial-JTAG already ran before SoftAP; minimal is bare app_main + nvs_flash_init then SoftAP.
+2. Linked Arduino WiFi/Network: even when SoftAP start skips WiFi.softAP, the sketch still links arduino-esp32 WiFi/Network (static ctors, possible netif/event side effects) vs pure IDF.
+3. sdkconfig: lily c2min forces CONFIG_ESP_WIFI_DYNAMIC_TX_BUFFER=y + CONFIG_ESP_WIFI_AMPDU_TX_ENABLED=n (+ LWIP_STATS / WDT knobs). Minimal uses stock IDF SoftAP buffers/AMPDU. Stock-sdkconfig lily build panics on esp_wifi_start in this raw path (see above) — cannot yet prove sdkconfig alone.
+4. Post-start hooks still present: esp_wifi_set_tx_done_cb(txDoneCb), Arduino WebServer.begin() on port 80, raw httpd on port 81 — minimal only runs stock esp_http_server on port 80.
+5. PSRAM / MSPI: lily boot still logs MSPI Timing Failed to allocate dummy cacheline for PSRAM memory barrier; minimal image does not show this path.
+6. Auth/token / route table: lily still generates C2 auth token and registers full REST route table on WebServer (idle until requests).
+
+**Conclusion:** Correct minimal-parity SoftAP bring-up inside the Arduino sketch fixes the 0.0.0.0 IP bug but does not restore association. SoftAP radio + DHCP netif look healthy from the AP side; AP→STA downlink through the 4-way still dead (TXSTATS AP=0). Locus after this attempt is no longer "Arduino WiFi.softAP call sequence alone" — it is whatever differs in the Arduino-hosted process (linked WiFi/Network, sdkconfig that panics when stock, tx_done_cb / dual HTTP stacks, or earlier Arduino init) vs bare c5_softap_min. #9 stays OPEN. Per plan: one solid attempt documented; stop.
+
+**Device image state:** C5 runs T-Dongle-C5-c2min with raw minimal-parity SoftAP + port 81 /raw + Arduino WebServer port 80. SoftAP beacons Lily @ ch6 / 192.168.4.1; win11 not associated.
+- Restore known-good minimal (assoc works): cd /home/op/scratch/c5_softap_min && pio run -t upload
+- Restore full lily: cd firmware && pio run -e T-Dongle-C5 -t upload
+- Rebuild this debug image: cd firmware && pio run -e T-Dongle-C5-c2min -t upload
+No git commit/push. Secrets/auth tokens redacted from this note.

@@ -26,6 +26,11 @@ fresh session doesn't start from zero.
 - **Build**: `cd firmware && pio run -e T-Dongle-C5` (or `-e T-Dongle-S3`).
   `pio run` must pass for whichever env you touch before you commit
   (`CONTRIBUTING.md`).
+- **Working SoftAP**: `pio run -e T-Dongle-C5-idf` — the from-source ESP-IDF
+  build that fixed issue #9 (the Arduino C5 build's SoftAP wedges; see
+  `docs/knowledge-base/open-questions.md` #9). Sources are a self-contained
+  component in `firmware/src/idf_softap/`; read its `README.md` before touching
+  them. The Arduino envs exclude that directory and are unaffected by it.
 - **Hardware access**: if a T-Dongle-C5 is physically attached this session,
   it shows up as `/dev/ttyACM0` (`lsusb`: `303a:1001`, Espressif USB
   JTAG/serial). `scripts/probe_reset.py` and `scripts/serial_monitor.py`

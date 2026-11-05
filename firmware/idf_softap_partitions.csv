@@ -1,0 +1,14 @@
+# Partition table for the ESP-IDF SoftAP environment (T-Dongle-C5-idf).
+# Referenced by platformio.ini (board_build.partitions) and by
+# idf_softap_sdkconfig.defaults (CONFIG_PARTITION_TABLE_CUSTOM_FILENAME).
+#
+# Deliberately NOT the same table as firmware/partitions.csv: that one is a
+# 3 MiB OTA app0 layout used by the Arduino environments. This one is the 2 MiB
+# factory table the hybrid SoftAP firmware ran on hardware (issue #9): the
+# image is ~1.11 MB, so 2 MiB leaves headroom and needs no OTA slots — the
+# SoftAP node is flashed over USB, never updated over the air.
+#
+# Name,   Type, SubType, Offset,  Size, Flags
+nvs,      data, nvs,     0x9000,  0x6000,
+phy_init, data, phy,     0xf000,  0x1000,
+factory,  app,  factory, 0x10000, 0x200000,

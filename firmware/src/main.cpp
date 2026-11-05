@@ -154,6 +154,9 @@ void setup()
     Hal::keyboardBegin();
     Serial.println(CFG_HAS_USB_HID ? "OK" : "N/A");
 
+#if CFG_C2_MIN_REPRO
+    bool sdOk = false;  // #9 bisect: SD+Display skipped
+#else
     // 3. Init SD card (optional — system works without it, just no payload files)
     Serial.print("[MAIN] SD card... ");
     bool sdOk = Storage::init();
@@ -172,6 +175,7 @@ void setup()
 
     // 4. Init display
     Display::init();
+#endif
 
     // 5. Start WiFi C2 (SoftAP)
     Serial.print("[MAIN] WiFi C2... ");
@@ -198,6 +202,14 @@ void setup()
 // ── loop ───────────────────────────────────────────────────────────────────
 void loop()
 {
+#if CFG_C2_MIN_REPRO
+    // open-questions.md #9 bisect: no LCD/SD/recon/interpreter load; yield so
+    // the WiFi task is not starved on this single-core chip.
+    C2Server::tick();
+    Console::tick();
+    delay(2);
+    return;
+#endif
     // Tick interpreter (non-blocking: runs one step per tick if still going)
     interp.tick();
 

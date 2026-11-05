@@ -34,6 +34,76 @@
 #include "config.h"
 
 static WebServer _server(CFG_HTTP_PORT);
+
+#if CFG_C2_MIN_REPRO
+// open-questions.md #9 A/B: MINIMAL-PARITY SoftAP (copy of c5_softap_min
+// raw esp_netif+esp_wifi; NEVER WiFi.softAP — Arduino espWiFiStart forces
+// WIFI_BAND_MODE_AUTO on C5 + creates STA netif) + raw httpd :81 + WebServer :80.
+#include <esp_http_server.h>
+#include <esp_netif.h>
+#include <esp_event.h>
+// SoftAP netif owned by the raw minimal-parity bring-up (not Arduino WiFi).
+static esp_netif_t* _rawApNetif = NULL;
+static IPAddress _rawApIp(192, 168, 4, 1);
+static httpd_handle_t _rawHttpd = NULL;
+
+static int rawStationCount()
+{
+    wifi_sta_list_t list = {};
+    if (esp_wifi_ap_get_sta_list(&list) != ESP_OK) return 0;
+    return (int)list.num;
+}
+
+static IPAddress rawApIP()
+{
+    if (_rawApNetif) {
+        esp_netif_ip_info_t info = {};
+        if (esp_netif_get_ip_info(_rawApNetif, &info) == ESP_OK && info.ip.addr != 0) {
+            _rawApIp = IPAddress((uint32_t)info.ip.addr);
+        }
+    }
+    return _rawApIp;
+}
+
+static void rawApEvent(void* arg, esp_event_base_t base, int32_t id, void* data)
+{
+    (void)arg; (void)base;
+    if (id == WIFI_EVENT_AP_STACONNECTED) {
+        wifi_event_ap_staconnected_t* e = (wifi_event_ap_staconnected_t*)data;
+        Serial.printf("[C2] station connected: %02X:%02X:%02X:%02X:%02X:%02X (aid=%u)\n",
+                      e->mac[0], e->mac[1], e->mac[2], e->mac[3], e->mac[4], e->mac[5], e->aid);
+    } else if (id == WIFI_EVENT_AP_STADISCONNECTED) {
+        wifi_event_ap_stadisconnected_t* e = (wifi_event_ap_stadisconnected_t*)data;
+        Serial.printf("[C2] station disconnected: %02X:%02X:%02X:%02X:%02X:%02X (aid=%u, reason=%u)\n",
+                      e->mac[0], e->mac[1], e->mac[2], e->mac[3], e->mac[4], e->mac[5],
+                      e->aid, e->reason);
+    }
+}
+static esp_err_t rawGetHandler(httpd_req_t* req)
+{
+    httpd_resp_set_type(req, "text/plain");
+    return httpd_resp_sendstr(req, "raw-ok\n");
+}
+static void startRawHttpd()
+{
+    httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
+    cfg.server_port = 81;
+    cfg.ctrl_port   = 32769;  // avoid clashing with any default httpd ctrl port
+    if (httpd_start(&_rawHttpd, &cfg) == ESP_OK) {
+        httpd_uri_t u = {};
+        u.uri      = "/raw";
+        u.method   = HTTP_GET;
+        u.handler  = rawGetHandler;
+        u.user_ctx = NULL;
+        httpd_register_uri_handler(_rawHttpd, &u);
+        Serial.println("[C2] raw esp_http_server started on :81 (/raw)");
+    } else {
+        Serial.println("[C2] raw esp_http_server FAILED to start");
+    }
+}
+#endif
+
+
 static bool _running = false;
 static Interpreter* _interp = NULL;  // set from main on start
 
@@ -303,8 +373,13 @@ static void handleStatus()
             default: j += "unknown";
         }
     }
+#if CFG_C2_MIN_REPRO
+    j += "\",\"clients\":" + String(rawStationCount());
+    j += ",\"ap_ip\":\"" + rawApIP().toString() + "\"}";
+#else
     j += "\",\"clients\":" + String(WiFi.softAPgetStationNum());
     j += ",\"ap_ip\":\"" + WiFi.softAPIP().toString() + "\"}";
+#endif
     _server.send(200, "application/json", j);
 }
 
@@ -684,7 +759,71 @@ static void onApStaEvent(WiFiEvent_t event, WiFiEventInfo_t info)
 static void startSoftApRadio()
 {
     Serial.print("[C2] Starting SoftAP...");
+#if CFG_C2_MIN_REPRO
+    // Exact sequence from /home/op/scratch/c5_softap_min/src/main.c.
+    // Do NOT call WiFi.softAP()/enableAP()/mode() — those go through Arduino
+    // WiFiGeneric::espWiFiStart() which on SOC_WIFI_SUPPORT_5G forces
+    // WIFI_BAND_MODE_AUTO and creates a default STA netif alongside AP.
+    esp_err_t e;
+    e = esp_netif_init();
+    if (e != ESP_OK && e != ESP_ERR_INVALID_STATE) {
+        Serial.printf(" [netif_init=0x%x]", (unsigned)e);
+    }
+    e = esp_event_loop_create_default();
+    if (e != ESP_OK && e != ESP_ERR_INVALID_STATE) {
+        Serial.printf(" [event_loop=0x%x]", (unsigned)e);
+    }
+    if (_rawApNetif == NULL) {
+        _rawApNetif = esp_netif_create_default_wifi_ap();  // DHCP server @ 192.168.4.1
+        if (_rawApNetif == NULL) Serial.print(" [create_ap_netif=FAIL]");
+    }
+    wifi_init_config_t icfg = WIFI_INIT_CONFIG_DEFAULT();  // stock — no Arduino TX-buffer overrides
+    e = esp_wifi_init(&icfg);
+    if (e != ESP_OK && e != ESP_ERR_INVALID_STATE) {
+        Serial.printf(" [wifi_init=0x%x]", (unsigned)e);
+    } else {
+        Serial.print(" [wifi_init=ok]");
+    }
+    esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &rawApEvent, NULL, NULL);
+
+    wifi_config_t w = {};
+    strncpy((char*)w.ap.ssid, CFG_WIFI_SSID, sizeof(w.ap.ssid) - 1);
+    w.ap.ssid_len = strlen(CFG_WIFI_SSID);
+    strncpy((char*)w.ap.password, CFG_WIFI_PASS, sizeof(w.ap.password) - 1);
+    w.ap.channel = CFG_WIFI_CHANNEL;
+    w.ap.max_connection = 4;
+    w.ap.authmode = WIFI_AUTH_WPA2_PSK;
+    w.ap.pmf_cfg.required = false;
+
+    e = esp_wifi_set_mode(WIFI_MODE_AP);
+    Serial.printf(" [mode_ap=%s]", e == ESP_OK ? "ok" : "FAIL");
+    e = esp_wifi_set_config(WIFI_IF_AP, &w);
+    Serial.printf(" [cfg=%s]", e == ESP_OK ? "ok" : "FAIL");
+    e = esp_wifi_start();
+    Serial.printf(" [start=%s]", e == ESP_OK ? "ok" : "FAIL");
+    Serial.print(" [raw_min_parity]");
+
+    for (int i = 0; i < 50; i++) {
+        esp_netif_ip_info_t info = {};
+        if (_rawApNetif && esp_netif_get_ip_info(_rawApNetif, &info) == ESP_OK && info.ip.addr != 0) {
+            _rawApIp = IPAddress((uint32_t)info.ip.addr);
+            break;
+        }
+        delay(20);
+    }
+    Serial.printf(" OK — %s\n", rawApIP().toString().c_str());
+#else
     WiFi.softAP(CFG_WIFI_SSID, CFG_WIFI_PASS, CFG_WIFI_CHANNEL, 0, 1);
+
+    // open-questions.md #9 / Sherlock 2026-10-30: ESP32-C5 SoftAP downlink
+    // wedge matches IDFGH-18499 (espressif/esp-idf#19267) and SoftAP PS buffer
+    // stalls (#6852/#13198). Disable modem sleep on the AP so the ~16-slot
+    // SoftAP PS buffer cannot silently starve downlink TX. Harmless if PS was
+    // already off; must run after WiFi.softAP() has started the driver.
+    {
+        esp_err_t psErr = esp_wifi_set_ps(WIFI_PS_NONE);
+        Serial.printf(" [ps=%s]", psErr == ESP_OK ? "NONE" : "set_ps FAILED");
+    }
 
 #if CFG_WIFI_BAND_5G
     // esp_wifi_set_band_mode() requires WiFi already started (it returns
@@ -710,6 +849,7 @@ static void startSoftApRadio()
 
     IPAddress ip = WiFi.softAPIP();
     Serial.printf(" OK — %s\n", ip.toString().c_str());
+#endif  // CFG_C2_MIN_REPRO
 }
 
 void C2Server::restartSoftAp() { startSoftApRadio(); }
@@ -720,8 +860,10 @@ bool C2Server::start()
     // Registered once here, not in startSoftApRadio() — that's re-called by
     // restartSoftAp() (Recon's AP-down PMF sweep) and WiFi.onEvent() has no
     // dedupe, so re-registering there would log every connect/disconnect twice.
+#if !CFG_C2_MIN_REPRO
     WiFi.onEvent(onApStaEvent, ARDUINO_EVENT_WIFI_AP_STACONNECTED);
     WiFi.onEvent(onApStaEvent, ARDUINO_EVENT_WIFI_AP_STADISCONNECTED);
+#endif
 
     startSoftApRadio();
 
@@ -762,6 +904,9 @@ bool C2Server::start()
     _server.begin();
     _running = true;
     Serial.println("[C2] HTTP server started");
+#if CFG_C2_MIN_REPRO
+    startRawHttpd();
+#endif
     return true;
 }
 
@@ -782,11 +927,21 @@ bool C2Server::running() { return _running; }
 
 int C2Server::connectedClients()
 {
-    // WiFi.softAPgetStationNum() — number of connected stations
+#if CFG_C2_MIN_REPRO
+    return rawStationCount();
+#else
     return WiFi.softAPgetStationNum();
+#endif
 }
 
-IPAddress C2Server::apIP() { return WiFi.softAPIP(); }
+IPAddress C2Server::apIP()
+{
+#if CFG_C2_MIN_REPRO
+    return rawApIP();
+#else
+    return WiFi.softAPIP();
+#endif
+}
 
 const char* C2Server::authToken() { return _authToken; }
 
