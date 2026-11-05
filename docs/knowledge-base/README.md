@@ -37,6 +37,8 @@ first if you are an agent (Hermes or otherwise) about to work in this repo.
 | [`toolchain-pioarduino.md`](toolchain-pioarduino.md) | Why the pioarduino platform fork is required, vendored board JSONs, Arduino-ESP32 3.x API drift catalog. |
 | [`usb-serial-jtag-console.md`](usb-serial-jtag-console.md) | The C5's USB-CDC boot race, why the auth token can be lost, the `while(!Serial)` pattern and its known pitfalls. |
 | [`open-questions.md`](open-questions.md) | **Read this before trusting any hardware claim in this repo.** Disputed/unverified claims found in the current branch, each with evidence and a concrete next test. |
+| [`issue-9-RESUME.md`](issue-9-RESUME.md) | **SoftAP #9 where-we-left-off.** RESOLVED status, device left on `T-Dongle-C5-idf`, git/PR pointers, resume commands. Start here to continue SoftAP work after a pause. |
+| [`issue-9-softap-findings.md`](issue-9-softap-findings.md) | SoftAP #9 evidence trail (Arduino wedge → IDF hybrid layers → main-tree port). |
 | [`duckyscript-v3.md`](duckyscript-v3.md) | DuckyScript (v3) language reference the payload interpreter must support: v1-vs-v3, core commands, ATTACKMODE, layout caveat pointer. |
 | [`hid-keyboard-injection.md`](hid-keyboard-injection.md) | USB HID boot keyboard report (8-byte), Usage-ID-vs-character, and the Polish (AltGr) layout problem for the S3 typing target. |
 | [`defensive-detection.md`](defensive-detection.md) | How BadUSB/HID injection is detected and blocked (USBGuard, kernel USB authorization, Windows Device Installation Restrictions, MITRE DET0568, DuckHunt) and the limits. |

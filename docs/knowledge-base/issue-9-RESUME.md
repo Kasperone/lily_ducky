@@ -1,5 +1,38 @@
 # Issue #9 SoftAP — RESUME handoff (2026-11-05)
 
+## WHERE WE LEFT OFF (read this first — 2026-11-05 evening Europe/Warsaw)
+
+**SoftAP #9 is RESOLVED and merged.** Hardware work on lily SoftAP paused here
+so the lab could move to CERT.PL bug-bounty setup. Pick up from this section;
+do not re-litigate the Arduino SoftAP wedge.
+
+| Item | State |
+|------|--------|
+| Fix | Env **`T-Dongle-C5-idf`** (`framework = espidf`), sources `firmware/src/idf_softap/` |
+| Flash / regress | **PASS** win11 + Hama RTL8188EUS — DHCP, HTTP, recon scan/enum/capture, auth-gated pcap GET 200 (libpcap magic); LCD OK on hybrid/`c5_hybrid_pcap` path |
+| Merged | `cf8dee6` (*fix SoftAP #9…*) via **PR #28** → `main` **`6fae5bc`** (pushed) |
+| Arduino SoftAP | Kept as **#9 repro / A/B** only — branch **`docs/arduino-c5-softap-repro`** @ **`8181303`** (pushed). Optional PR merge into `main` still **pending** |
+| Device left on | Main-tree **`T-Dongle-C5-idf`** / hybrid-pcap-class image (restore of scratch layers not needed) |
+| Not started | Roadmap **Phase 3 BLE HID**; porting **PMFDOWN** onto IDF SoftAP (still stubbed `false`); further hybrid beyond pcap |
+| Pause reason | CERT.PL / hack.cert.pl bug-bounty workspace setup (separate from this repo) |
+
+**Constraint:** short serial only — never leave `scripts/serial_monitor.py` long-running; prefer `probe_reset.py` / short captures. Reach guest via laptop **vm-gx** as user `op` (never SSH into arch-pentest; never touch nftables/SSH/VPN).
+
+### Resume commands (env name = `T-Dongle-C5-idf`)
+
+```bash
+cd /home/op/Documents/projects/lily_ducky
+git fetch origin && git checkout main && git pull --ff-only   # SoftAP fix is on main @ 6fae5bc
+cd firmware
+pio run -e T-Dongle-C5-idf                   # build only; flash only if Kasper asks
+# Lab SoftAP / real C2: ONLY T-Dongle-C5-idf — do not flash Arduino T-Dongle-C5 SoftAP for lab work
+# Optional later: open/merge PR from docs/arduino-c5-softap-repro (8181303) into main
+```
+
+Detail trail: `issue-9-softap-findings.md` + open-questions.md §9. Scratch layer PASS table is below.
+
+---
+
 ## Problem recap
 lily_ducky SoftAP on the T-Dongle ESP32-C5 (Arduino / arduino-esp32 build) fails
 AP->STA below lwIP: a win11 + Hama RTL8188EUS (0bda:8179) client cannot associate
@@ -87,6 +120,8 @@ That sequence finished at the pcap layer and has now been folded into the repo.
 ## Device / flash state (2026-11-05)
 - **On device now:** main-tree **`T-Dongle-C5-idf`** — FLASHED + **SoftAP regress PASS**
   (win11+Hama: DHCP 192.168.4.6; HTTP/recon/pcap as above).
+- **Git:** fix commit `cf8dee6` merged via **PR #28** → `main` `6fae5bc` (pushed).
+- **Arduino repro branch:** `docs/arduino-c5-softap-repro` @ `8181303` (pushed; not on `main` yet).
 - Prior known-good scratch: `/home/op/scratch/c5_hybrid_pcap` (and earlier layers);
   restore not needed after the main-tree PASS.
 
@@ -109,19 +144,20 @@ That sequence finished at the pcap layer and has now been folded into the repo.
 - No auth → 401; missing name → 404. ping 4/4 after download.
 - Restore of l3c not required.
 
-## NEXT
-1. **DONE PASS (2026-11-05):** Flash the merged `T-Dongle-C5-idf` image and
-   re-run the win11+Hama SoftAP regress (association + DHCP, HTTP status /
-   payloads, recon scan/enum/capture, PCAP download). Device left on that
-   image. Issue #9 formally closed / RESOLVED.
-2. Optional remaining: visually confirm the LCD GREENTAB 160x80 paint on the
-   physical dongle (still the one hardware claim nobody has eyes on).
-3. Optional remaining: AP-down PMF sweep remains stubbed — only worth porting
-   if a SoftAP teardown path is acceptable.
-4. **DECIDED (keep as #9 repro):** Arduino `T-Dongle-C5` SoftAP stays enabled
-   as the known-bad #9 reproducer / A/B contrast vs `T-Dongle-C5-idf`. Lab
-   SoftAP / real C2 uses only the IDF env — do not flash Arduino SoftAP for
-   lab work. SoftAP code in the Arduino env is not disabled.
+## NEXT (after CERT.PL pause)
+
+1. **DONE PASS (2026-11-05):** Flash merged `T-Dongle-C5-idf` + win11+Hama SoftAP
+   regress. Device left on that image. Issue #9 formally **RESOLVED** / closed in KB.
+2. **Optional docs:** merge branch `docs/arduino-c5-softap-repro` (`8181303`) into
+   `main` (Arduino SoftAP kept as #9 repro — already decided; PR merge still pending).
+3. **Optional HW:** visually confirm LCD GREENTAB 160×80 paint on the physical dongle.
+4. **Optional / not started:** AP-down **PMFDOWN** on the IDF SoftAP path (still stubbed
+   `false` — only if SoftAP teardown/restore is acceptable).
+5. **Roadmap (not started; paused for CERT.PL BB):** Phase 3 **BLE HID** (C5's only
+   keystroke path); further hybrid beyond pcap if needed.
+6. **DECIDED:** Arduino `T-Dongle-C5` SoftAP stays enabled as known-bad #9 repro /
+   A/B vs `T-Dongle-C5-idf`. Lab SoftAP / real C2 uses **only** the IDF env.
+
 
 ## Tooling / hygiene
 - Reach guest only via laptop vm-gx as user op. Never SSH into arch-pentest.
