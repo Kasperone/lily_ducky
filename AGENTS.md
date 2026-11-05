@@ -66,7 +66,7 @@ resolve it.
 > 192.168.4.6; HTTP 200 on `/` `/raw` `/api/status` `/api/payloads`; recon
 > scan+enum+capture held SoftAP; authenticated pcap GET 200 (libpcap
 > magic/Content-Type); 401 without auth; 404 missing. Device left on that
-> image. Arduino `T-Dongle-C5` kept as the #9 SoftAP reproducer.
+> image. Lab SoftAP / real C2 is **only** `T-Dongle-C5-idf`. Arduino `T-Dongle-C5` SoftAP is intentionally kept as the #9 repro / A/B contrast — do not use it for lab C2.
 > Detail: `docs/knowledge-base/issue-9-softap-findings.md` +
 > `issue-9-RESUME.md`; the log below is the evidence trail.
 
@@ -364,9 +364,11 @@ source of truth). The `T-Dongle-S3` env is unaffected (still precompiled).
 - Keyboard layout: default US breaks on PL/DE/etc. — watch for garbage chars
 
 ## Gotchas
-- **The C5 SoftAP only works in the `T-Dongle-C5-idf` env.** The Arduino C5
-  build's SoftAP associates then goes permanently deaf (issue #9 / open-questions
-  #9); do not "fix" it there. Two traps specific to that env: PlatformIO
+- **Lab SoftAP is only `T-Dongle-C5-idf`.** The Arduino `T-Dongle-C5` SoftAP
+  associates then goes permanently deaf (issue #9 / open-questions #9); that env
+  is **intentionally kept** as the #9 repro / A/B contrast against the IDF fix —
+  do not use Arduino SoftAP for real lab C2, and do not "fix" SoftAP there.
+  Two traps specific to the IDF SoftAP env: PlatformIO
   **silently ignores `custom_sdkconfig` when `framework = espidf`** (use
   `board_build.cmake_extra_args = "-DSDKCONFIG_DEFAULTS=..."` instead), and
   editing `idf_softap_sdkconfig.defaults` does **not** trigger a CMake
