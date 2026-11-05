@@ -293,6 +293,7 @@ T-Dongle-S3 (USB-OTG) — or BLE HID, which both boards can do (BLE 5).
   capability flag, no code forks/branches per board.
 
 ## Implementation roadmap (remaining)
+- **WHERE WE LEFT OFF (2026-11-05):** SoftAP **#9 RESOLVED** (`T-Dongle-C5-idf`, PR #28 → `main` `6fae5bc`); device on that image; Arduino SoftAP kept as repro on `docs/arduino-c5-softap-repro` (`8181303`, optional merge pending). Phase 3 BLE / IDF PMFDOWN / further hybrid **not started** — lily SoftAP work **paused** for CERT.PL bug-bounty setup. Resume: `docs/knowledge-base/issue-9-RESUME.md`.
 - ~~Build verification VM~~ — done: PlatformIO is installed on the hardware VM;
   both envs build green and the C5 flashes directly here.
 - Phase 2.5: Port interpreter to CircuitPython for RP2350-One fallback
