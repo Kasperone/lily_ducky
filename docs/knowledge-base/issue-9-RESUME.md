@@ -118,9 +118,10 @@ That sequence finished at the pcap layer and has now been folded into the repo.
    physical dongle (still the one hardware claim nobody has eyes on).
 3. Optional remaining: AP-down PMF sweep remains stubbed — only worth porting
    if a SoftAP teardown path is acceptable.
-4. Optional remaining: decide whether the Arduino `T-Dongle-C5` env keeps its
-   known-bad Arduino WiFi SoftAP (useful only as a #9 repro) or is retired now
-   that `T-Dongle-C5-idf` supersedes it for the lab-node role.
+4. **DECIDED (keep as #9 repro):** Arduino `T-Dongle-C5` SoftAP stays enabled
+   as the known-bad #9 reproducer / A/B contrast vs `T-Dongle-C5-idf`. Lab
+   SoftAP / real C2 uses only the IDF env — do not flash Arduino SoftAP for
+   lab work. SoftAP code in the Arduino env is not disabled.
 
 ## Tooling / hygiene
 - Reach guest only via laptop vm-gx as user op. Never SSH into arch-pentest.

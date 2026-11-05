@@ -531,7 +531,7 @@ run `pio run -e T-Dongle-C5-idf -t clean`, or the edit is silently ignored.
 - LCD GREENTAB paint still not visually confirmed by eye.
 - AP-down PMF sweep still stubbed (`recon_start_pmf_sweep_ap_down` → false).
 - No serial console commands in this build (Arduino `src/console/` only).
-- Arduino `T-Dongle-C5` env kept as the #9 SoftAP reproducer.
+- Arduino `T-Dongle-C5` SoftAP intentionally kept as the #9 repro / A/B contrast; lab SoftAP is only `T-Dongle-C5-idf` (do not use Arduino SoftAP for real lab C2).
 
 ## Result — main-tree T-Dongle-C5-idf SoftAP regress (2026-11-05) — #9 FORMALLY CLOSED / RESOLVED
 Merged env `T-Dongle-C5-idf` (espidf SoftAP hybrid in `firmware/src/idf_softap/`) was flashed to the T-Dongle-C5 and SoftAP-regressed on win11+Hama to the same bar as prior `c5_hybrid_pcap` PASS: association+DHCP **192.168.4.6**, HTTP 200 on `/`, `/raw`, `/api/status` (ap_ip 192.168.4.1), `/api/payloads`, ping hold, recon scan and enum without SoftAP drop, capture start/stop hold, authenticated pcap download 200 with libpcap Content-Type/magic, 401 without auth, 404 for missing name. Device left on this image; restore not needed.
